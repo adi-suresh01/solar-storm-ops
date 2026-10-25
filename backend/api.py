@@ -22,9 +22,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from replay import SCENARIOS, Replay  # noqa: E402
 from watcher import (BANDS, LOW_KM, OFFLINE, ROOT, STATE_DIR, Constellation, assess,  # noqa: E402
-                     build_recommendation, g_scale, initial_weather, iso,
-                     l12_positions, load_gp, log, maybe_refresh_gp, now_utc,
-                     refresh_weather, shift)
+                     build_recommendation, cme_line, cmes_known, g_scale,
+                     initial_weather, iso, l12_positions, load_gp, load_json, log,
+                     maybe_fetch_donki, maybe_refresh_gp, now_utc, refresh_weather,
+                     shift)
 
 NOAA_EVERY_S = 300
 PROPAGATE_EVERY_S = 30
@@ -53,6 +54,8 @@ class Engine:
         self.weather = initial_weather()
         self.const = Constellation(load_gp())
         self.last_noaa = 0.0
+        self.last_donki = 0.0
+        self.live_cmes = load_json("donki_live.json", (STATE_DIR,)) or []
         self.last_gp = time.time()
         self.last_prop = 0.0
         self.pos_key = None
@@ -69,15 +72,24 @@ class Engine:
 
     # ------------------------------------------------------------ background
 
-    def loop(self):
+    def start(self):
+        # Two threads: network fetches can hang for minutes and must never
+        # stall the replay clock or the API.
+        threading.Thread(target=self._forever, args=(self.fetch, 5), daemon=True,
+                         name="fetch").start()
+        threading.Thread(target=self._forever, args=(self.tick, 1), daemon=True,
+                         name="tick").start()
+
+    def _forever(self, fn, every):
         while True:
             try:
-                self.tick()
+                fn()
             except Exception:
-                log("tick failed:\n" + traceback.format_exc())
-            time.sleep(1)
+                log(f"{fn.__name__} failed:\n" + traceback.format_exc())
+            time.sleep(every)
 
-    def tick(self):
+    def fetch(self):
+        """Network side: NOAA, NASA DONKI, CelesTrak. Slow is fine here."""
         t = time.time()
         if not OFFLINE and t - self.last_noaa >= NOAA_EVERY_S:
             self.last_noaa = t
@@ -85,11 +97,21 @@ class Engine:
             log(f"noaa refreshed: {','.join(ok) or 'nothing'} kp_now={w.get('kp_now')}")
             with self.lock:
                 self.weather = w
+        if t - self.last_donki >= 60:  # maybe_fetch_donki throttles itself to 20 min
+            self.last_donki = t
+            if any(g.startswith("live") for g in maybe_fetch_donki()):
+                cmes = load_json("donki_live.json", (STATE_DIR,)) or []
+                with self.lock:
+                    self.live_cmes = cmes
         if t - self.last_gp >= GP_CHECK_EVERY_S:
             self.last_gp = t
             if maybe_refresh_gp():
                 self.const = Constellation(load_gp())
                 self.last_prop = 0.0
+
+    def tick(self):
+        """Local side: positions, replay clock, risk picture. Never touches the network."""
+        t = time.time()
         if t - self.last_prop >= PROPAGATE_EVERY_S:
             self.last_prop = t
             self._propagate()
@@ -133,10 +155,12 @@ class Engine:
         """Advance the current run: replay events in order, or the live picture."""
         run = self.run
         if run.replay:
-            for when, kind in run.replay.due_events():
+            for when, kind, data in run.replay.due_events():
                 if kind == "launch":
                     self._log(run, when, "info",
                               "Launch L-12: 49 satellites deployed at ~210 km (SIMULATED batch).")
+                if kind == "cme":
+                    self._log(run, when, "info", cme_line(data))
                 self._update(run, self._assess(run, when), kp_tick=(kind == "kp"))
                 if kind == "end":
                     self._log(run, when, "info", "Replay finished.")
@@ -252,15 +276,34 @@ class Engine:
                 st["note"] = r.note
                 st["replay"] = {"title": r.title, "speed": r.speed, "start": iso(r.start),
                                 "end": iso(r.end), "done": r.done()}
+                st["l1_monitors"], st["imf_bz_nt"] = [], None
+                st["cme"] = cmes_known(r.cmes, when)
             else:
                 w = self.weather
-                st = {"mode": "live", "sim_time": iso(now_utc()), "kp_now": w["kp_now"],
+                when = now_utc()
+                st = {"mode": "live", "sim_time": iso(when), "kp_now": w["kp_now"],
                       "kp_history": w["kp_history"], "kp_forecast": w["kp_forecast"],
                       "xray": w["xray"], "scales": w["scales"],
                       "solar_wind_kms": w["solar_wind_kms"]}
-                st["note"] = "LIVE: NOAA SWPC space weather, CelesTrak Starlink orbits."
+                st["l1_monitors"] = w.get("l1_monitors", [])
+                active = next((m for m in st["l1_monitors"] if m["active"]), None)
+                st["imf_bz_nt"] = active["bz_nt"] if active else None
+                st["cme"] = cmes_known(self.live_cmes, when)
+                st["note"] = ("LIVE: NOAA SWPC space weather, solar wind at L1 from NOAA's"
+                              " active monitor plus NASA ACE and IMAP, CelesTrak Starlink orbits.")
             st["alert"] = {"level": run.a["level"], "summary": self._summary(run)}
             return st
+
+    def _l1_line(self, st):
+        mons = st.get("l1_monitors") or []
+        if not mons:
+            return None
+        parts = []
+        for m in mons:
+            v = f"{m['speed_kms']:.0f} km/s" if m["speed_kms"] is not None else "n/a"
+            bz = f", Bz {m['bz_nt']:+.1f} nT" if m["bz_nt"] is not None else ""
+            parts.append(f"{m['label']}{' (active)' if m['active'] else ''} {v}{bz}")
+        return "Solar wind at L1: " + "; ".join(parts) + "."
 
     def risk(self):
         with self.lock:
@@ -287,6 +330,8 @@ class Engine:
                 r = Replay(scenario, speed, start)
                 run = Run(scenario, r)
                 self._log(run, r.start, "info", f"Replay started: {r.title} at {speed:g}x. {r.note}")
+                for c in r.cmes_before_start():
+                    self._log(run, r.start, "info", "Already on its way. " + cme_line(c))
                 self.run = run
             self._step()
             self.pos_key = None
@@ -351,7 +396,12 @@ class Engine:
         if run.replay:
             lines.append(f"[{run.replay.title}: real Kp, SIMULATED forecast and launch batch."
                          f" Sim time {iso(run.replay.now())}]")
-        lines += ["", rec["summary"], "", "At risk:"]
+        lines += ["", rec["summary"]]
+        st = self.state()
+        lines += [cme_line(c) for c in st["cme"]]
+        if self._l1_line(st):
+            lines.append(self._l1_line(st))
+        lines += ["", "At risk:"]
         for g in a["groups"]:
             lines.append(f"- {g['name']}: {g['count']} sats, lowest {g['min_alt_km']:.0f} km")
         lines += ["", "Plan:"]
@@ -378,9 +428,20 @@ class Engine:
             f" high {b['high']}, watch {b['watch']}, fine {b['fine']}.",
             f"Risk level: {st['alert']['level']}. {st['alert']['summary']}",
             f"Open plan: {rec['id'] + ' ' + rec['status'] if rec else 'none'}.",
-            "Last events:",
-        ] + [f"- {e['time']} {e['kind']}: {e['text']}" for e in tl]
+        ]
+        if self._l1_line(st):
+            lines.insert(2, self._l1_line(st))
+        lines += [cme_line(c) for c in st["cme"]] or ["NASA DONKI: no Earth-directed CME on record."
+                                                      if self._donki_loaded() else
+                                                      "NASA DONKI: not available right now."]
+        lines += ["Last events:"] + [f"- {e['time']} {e['kind']}: {e['text']}" for e in tl]
         return "\n".join(lines)
+
+    def _donki_loaded(self):
+        run = self.run
+        if run.replay:
+            return load_json(f"donki_{run.replay.scenario}.json") is not None
+        return os.path.exists(os.path.join(STATE_DIR, "donki_live.json"))
 
 
 # ---------------------------------------------------------------- HTTP
@@ -507,7 +568,7 @@ def main():
 
     engine = Engine()
     Handler.engine = engine
-    threading.Thread(target=engine.loop, daemon=True, name="watcher").start()
+    engine.start()
     up = 0
     for a in addrs:
         try:

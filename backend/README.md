@@ -29,6 +29,13 @@ Shapes match `fixtures/`. Differences and additions:
   `xray.flux` is `null`, `xray.class` is `"n/a"`, `scales.R` and `scales.S` are `"n/a"`,
   `solar_wind_kms` is `null`. `scales.G` is computed from Kp.
 - `/state.note`: a label to show on screen (says LIVE, or REPLAY + what is SIMULATED).
+- `/state.l1_monitors`: live solar wind per spacecraft at L1, from NOAA's real-time feed:
+  `[{source, label, active, time, speed_kms, density_cc, bz_nt, bt_nt}]`. Labels include
+  `NASA ACE` and `NASA IMAP`; `active` is NOAA's operational source. Empty during replays.
+- `/state.imf_bz_nt`: Bz of the active monitor (negative = southward, storms start there). `null` in replays.
+- `/state.cme`: Earth-directed CMEs from NASA DONKI `[{id, start, speed_kms, earth_arrival,
+  kp_estimate_max, source}]`. NASA's DONKI service is down today, so this is `[]` unless
+  it comes back (the API retries every 20 min and caches it).
 - `/state.replay`: `{title, speed, start, end, done}` during a replay.
 - `/risk.recommendation.status`: `pending` | `approved` | `rejected`.
 - `/positions`: the 49 L-12 satellites (ids 990001-990049) have `"simulated": true` and

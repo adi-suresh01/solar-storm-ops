@@ -2,6 +2,8 @@
 # Start/stop the data API on the GB10.
 #   backend/run.sh start [bind-list]   e.g. backend/run.sh start 127.0.0.1,172.17.0.1
 #   backend/run.sh stop | status | log
+#   backend/run.sh reset              back to live (before each rehearsal)
+#   backend/run.sh demo [speed]       start the Feb 2022 replay (default 720x)
 # Never binds 0.0.0.0 (api.py refuses it).
 set -u
 cd "$(dirname "$0")/.."
@@ -22,4 +24,10 @@ case "${1:-status}" in
     pgrep -af "backend/api.py" || echo "not running" ;;
   log)
     tail -n 50 state/api.log ;;
+  reset)  # back to live data, clean timeline; use before each rehearsal
+    curl -s -X POST -H 'Content-Type: application/json' -d '{"scenario": "live"}' \
+      http://127.0.0.1:18310/replay; echo ;;
+  demo)   # start the Feb 2022 replay: backend/run.sh demo [speed, default 720]
+    curl -s -X POST -H 'Content-Type: application/json' \
+      -d "{\"scenario\": \"feb2022\", \"speed\": ${2:-720}}" http://127.0.0.1:18310/replay; echo ;;
 esac

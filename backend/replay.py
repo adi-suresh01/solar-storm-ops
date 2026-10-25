@@ -45,14 +45,18 @@ class Replay:
         self.launch = utc(sc["launch"]) if sc["launch"] else None
         kp = load_json("replay_kp.json")[scenario]
         self.kp = [(utc(p["time"]), float(p["kp"])) for p in kp]
+        # NASA DONKI CMEs for this window, if we ever managed to cache them
+        self.cmes = load_json(f"donki_{scenario}.json") or []
         self.t0 = time.time()
         # Things that happen on the sim clock, in order: each 3-hourly Kp bin,
-        # plus the launch. The engine logs each one to the timeline when due.
-        ev = [(t, "kp") for t, _ in self.kp if self.start <= t <= self.end]
+        # the launch, and CME departures. The engine logs each one when due.
+        ev = [(t, "kp", None) for t, _ in self.kp if self.start <= t <= self.end]
         if self.launch and self.start <= self.launch <= self.end:
-            ev.append((self.launch, "launch"))
-        ev.append((self.end, "end"))
-        order = {"kp": 0, "launch": 1, "end": 2}
+            ev.append((self.launch, "launch", None))
+        ev += [(utc(c["start"]), "cme", c) for c in self.cmes
+               if self.start < utc(c["start"]) <= self.end]
+        ev.append((self.end, "end", None))
+        order = {"kp": 0, "cme": 1, "launch": 2, "end": 3}
         self.events = sorted(ev, key=lambda e: (e[0], order[e[1]]))
         self.next_event = 0
 
@@ -90,6 +94,11 @@ class Replay:
     def forecast(self, when):
         nxt = [(t, k) for t, k in self.kp if t > when][:FORECAST_BINS]
         return [{"time": iso(t), "kp": k} for t, k in nxt]
+
+    def cmes_before_start(self):
+        """CMEs already on their way when the replay starts (shown as context)."""
+        return [c for c in self.cmes if utc(c["start"]) <= self.start
+                and utc(c["earth_arrival"]) >= self.start - timedelta(days=1)]
 
     def batch_size(self, when):
         return L12_COUNT if self.launched(when) else 0

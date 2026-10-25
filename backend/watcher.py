@@ -3,6 +3,7 @@
 Stdlib plus sgp4. Every feed falls back to a cached file, so the API keeps
 working with no network at all (state/ first, then fixtures/).
 """
+import gzip
 import json
 import math
 import os
@@ -80,9 +81,10 @@ def save_json(name, obj):
 
 
 def fetch(url, timeout=20):
-    req = urllib.request.Request(url, headers=UA)
+    req = urllib.request.Request(url, headers=dict(UA, **{"Accept-Encoding": "gzip"}))
     with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read()
+        body = r.read()
+        return gzip.decompress(body) if r.headers.get("Content-Encoding") == "gzip" else body
 
 
 # ---------------------------------------------------------------- NOAA
@@ -99,7 +101,8 @@ def zt(t):
     return iso(utc(t))
 
 
-WEATHER_KEYS = ("kp_now", "kp_history", "kp_forecast", "xray", "scales", "solar_wind_kms")
+WEATHER_KEYS = ("kp_now", "kp_history", "kp_forecast", "xray", "scales", "solar_wind_kms",
+                "l1_monitors")
 
 
 def initial_weather():
@@ -147,12 +150,130 @@ def refresh_weather(prev):
         d = d[0] if isinstance(d, list) else d
         w["solar_wind_kms"] = d["proton_speed"]
 
+    def l1():
+        w["l1_monitors"] = l1_monitors(
+            json.loads(fetch(SWPC + "/json/rtsw/rtsw_wind_1m.json")),
+            json.loads(fetch(SWPC + "/json/rtsw/rtsw_mag_1m.json")))
+
     for name, fn in (("kp", kp), ("forecast", forecast), ("xray", xray),
-                     ("scales", scales), ("wind", wind)):
+                     ("scales", scales), ("wind", wind), ("l1", l1)):
         step(name, fn)
     if ok:
         save_json("weather.json", w)
     return w, ok
+
+
+# Spacecraft at L1 in NOAA's real-time solar wind feed. NOAA marks one "active".
+L1_LABELS = {"ACE": "NASA ACE", "IMAP": "NASA IMAP", "DSCOVR": "NOAA DSCOVR"}
+
+
+def l1_monitors(wind, mag):
+    """Latest reading per spacecraft from the last 30 min of the RTSW feeds."""
+    newest = max((utc(r["time_tag"]) for r in wind), default=None)
+    out = {}
+    for rows, fields in ((wind, ("proton_speed", "proton_density")), (mag, ("bz_gsm", "bt"))):
+        for r in rows:  # newest first
+            src = r.get("source")
+            if not src or newest is None or utc(r["time_tag"]) < newest - timedelta(minutes=30):
+                continue
+            # rows are newest first, so the first row seen sets "active"
+            m = out.setdefault(src, {"source": src, "label": L1_LABELS.get(src, src),
+                                     "active": bool(r.get("active")), "time": None,
+                                     "speed_kms": None, "density_cc": None,
+                                     "bz_nt": None, "bt_nt": None})
+            keys = {"proton_speed": "speed_kms", "proton_density": "density_cc",
+                    "bz_gsm": "bz_nt", "bt": "bt_nt"}
+            for f in fields:
+                if m[keys[f]] is None and r.get(f) is not None:
+                    m[keys[f]] = r[f]
+                    m["time"] = m["time"] or zt(r["time_tag"])
+    return sorted(out.values(), key=lambda m: (not m["active"], m["source"]))
+
+
+# ---------------------------------------------------------------- NASA DONKI
+
+DONKI_URLS = (
+    "https://kauai.ccmc.gsfc.nasa.gov/DONKI/WS/get/CME?startDate={s}&endDate={e}",
+    "https://api.nasa.gov/DONKI/CME?startDate={s}&endDate={e}&api_key=DEMO_KEY",
+)
+DONKI_WINDOWS = {  # replay caches, fetched once; "live" is refreshed hourly
+    "feb2022": ("2022-01-25", "2022-02-05"),
+    "may2024": ("2024-05-03", "2024-05-12"),
+}
+DONKI_RETRY_S = 20 * 60
+
+
+def simplify_cmes(raw):
+    """Earth-directed CMEs from a DONKI CME list: start, speed, NASA model arrival."""
+    out = []
+    for c in raw if isinstance(raw, list) else []:
+        try:
+            an = c.get("cmeAnalyses") or []
+            a = next((x for x in an if x.get("isMostAccurate")), an[-1] if an else {})
+            runs = [e for e in (a.get("enlilList") or []) if e.get("estimatedShockArrivalTime")]
+            if not runs:
+                continue
+            e = runs[-1]
+            kps = [e.get(k) for k in ("kp_18", "kp_90", "kp_135", "kp_180") if e.get(k) is not None]
+            out.append({"id": c.get("activityID"), "start": iso(utc(c["startTime"])),
+                        "speed_kms": a.get("speed"), "type": a.get("type"),
+                        "earth_arrival": iso(utc(e["estimatedShockArrivalTime"])),
+                        "kp_estimate_max": max(kps) if kps else None,
+                        "source": "NASA DONKI (CCMC)"})
+        except Exception:
+            continue
+    return sorted(out, key=lambda x: x["start"])
+
+
+def fetch_donki(start, end):
+    last = None
+    for u in DONKI_URLS:
+        try:
+            return simplify_cmes(json.loads(fetch(u.format(s=start, e=end), timeout=30)))
+        except Exception as ex:
+            last = ex
+    raise last
+
+
+def maybe_fetch_donki():
+    """Try NASA DONKI when a cache is missing or the live one is over 1 h old."""
+    if OFFLINE:
+        return []
+    stamp = os.path.join(STATE_DIR, "donki_last_try")
+    if os.path.exists(stamp) and time.time() - os.path.getmtime(stamp) < DONKI_RETRY_S:
+        return []
+    save_bytes("donki_last_try", iso(now_utc()).encode())
+    got = []
+    jobs = [(k, s, e) for k, (s, e) in DONKI_WINDOWS.items() if load_json(f"donki_{k}.json") is None]
+    live = os.path.join(STATE_DIR, "donki_live.json")
+    if not os.path.exists(live) or time.time() - os.path.getmtime(live) > 3600:
+        today = now_utc()
+        jobs.append(("live", (today - timedelta(days=7)).strftime("%Y-%m-%d"),
+                     today.strftime("%Y-%m-%d")))
+    for key, s, e in jobs:
+        try:
+            cmes = fetch_donki(s, e)
+            save_json(f"donki_{key}.json", cmes)
+            got.append(f"{key}:{len(cmes)}")
+        except Exception as ex:
+            log(f"donki {key} failed: {ex!r}")
+            break  # service is down; try again later
+    if got:
+        log(f"donki cached {', '.join(got)}")
+    return got
+
+
+def cmes_known(cmes, when):
+    """CMEs that had left the sun by `when` and are not more than a day past arrival."""
+    return [c for c in cmes or []
+            if utc(c["start"]) <= when and utc(c["earth_arrival"]) >= when - timedelta(days=1)]
+
+
+def cme_line(c):
+    speed = f", about {c['speed_kms']:.0f} km/s" if c.get("speed_kms") else ""
+    kp = f", NASA model Kp up to {c['kp_estimate_max']:g}" if c.get("kp_estimate_max") else ""
+    return (f"NASA DONKI: CME left the sun {c['start']}{speed}. NASA model arrival"
+            f" at Earth {c['earth_arrival']}{kp}.")
 
 
 # ---------------------------------------------------------------- CelesTrak

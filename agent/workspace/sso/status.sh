@@ -9,6 +9,8 @@ echo "$S" | jq -r '
   "Kp now: \(.kp_now)",
   "Max Kp forecast, next 3 days: \([.kp_forecast[].kp] | max // "n/a")",
   "X-ray: \(.xray.class). NOAA scales: R \(.scales.R), S \(.scales.S), G \(.scales.G). Solar wind: \(.solar_wind_kms // "n/a") km/s",
+  (.l1_monitors[]? | "Solar wind at L1, \(.label)\(if .active then " (NOAA active source)" else "" end): \(.speed_kms // "n/a") km/s, IMF Bz \(.bz_nt // "n/a") nT"),
+  (.cme[]? | "NASA DONKI CME: left the sun \(.start), \(.speed_kms // "n/a") km/s, NASA model arrival \(.earth_arrival), Kp estimate up to \(.kp_estimate_max // "n/a")"),
   "Risk level: \(.alert.level). \(.alert.summary)"'
 echo "$R" | jq -r '
   "Satellites per band: critical \(.bands.critical), high \(.bands.high), watch \(.bands.watch), fine \(.bands.fine)",
