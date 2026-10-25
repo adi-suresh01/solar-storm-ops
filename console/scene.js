@@ -180,8 +180,7 @@ export function createScene(canvas, labelLayer, { reducedMotion = false } = {}) 
   controls.minDistance = 1.25;
   controls.maxDistance = 160;
   controls.rotateSpeed = 0.5;
-  controls.autoRotate = !reducedMotion;
-  controls.autoRotateSpeed = 0.06;
+  controls.autoRotate = false;  // keep the framed Earth + Sun view; the scene moves on its own
   // the page scrolls; only zoom the globe on a pinch (ctrl+wheel) or with a modifier key
   canvas.addEventListener('wheel', (e) => { controls.enableZoom = e.ctrlKey || e.metaKey || e.altKey; }, { capture: true, passive: true });
 
@@ -404,8 +403,18 @@ export function createScene(canvas, labelLayer, { reducedMotion = false } = {}) 
   // camera choreography
   let flight = null;
   const views = {
-    // mostly the sunlit side, with the day/night line visible on one edge
-    earth: () => ({ target: new THREE.Vector3(0, 0, 0), pos: new THREE.Vector3().copy(sunDir).multiplyScalar(3.4).add(basis.side.clone().multiplyScalar(2.7)).add(new THREE.Vector3(0, 1.3, 0)) }),
+    // Earth from its night side, the Sun behind it to the right, L1 in between:
+    // camera 6.5 Earth radii out, 25 deg off the anti-Sun line, a little above the Sun's plane
+    earth: () => {
+      const a = THREE.MathUtils.degToRad(25), d = 6.5;
+      const make = (sign) => new THREE.Vector3().copy(sunDir).multiplyScalar(-d * Math.cos(a))
+        .addScaledVector(basis.side, sign * d * Math.sin(a)).addScaledVector(basis.up2, 0.52);
+      let pos = make(1);
+      const fwd = pos.clone().negate().normalize();
+      const right = new THREE.Vector3().crossVectors(fwd, camera.up).normalize();
+      if (sunGroup.position.clone().sub(pos).dot(right) < 0) pos = make(-1);
+      return { target: new THREE.Vector3(0, 0, 0), pos };
+    },
     sun: () => {
       // Sun on the left, Earth on the right (cause, then effect), framed wide
       // enough to clear the side panels
@@ -552,6 +561,8 @@ export function createScene(canvas, labelLayer, { reducedMotion = false } = {}) 
     const camDist = camera.position.distanceTo(controls.target) + camera.position.length() * 0.0;
     const sunView = camera.position.length() > 20;
     const speed = (windKms / 400) * 0.055 * (reducedMotion ? 0.3 : 1);
+    // show the stream when zoomed out, or from Earth's night side where it flows in behind the planet
+    const windVis = sunView ? 1 : camera.position.dot(sunDir) < 0 ? 0.6 : 0;
     const from = sunGroup.position;
     for (let i = 0; i < WIND_N; i++) {
       windP[i] += dt * speed * windJ[i] * (1 + activity * 1.5);
@@ -562,7 +573,7 @@ export function createScene(canvas, labelLayer, { reducedMotion = false } = {}) 
       tmp.addScaledVector(basis.side, Math.cos(windA[i]) * windR[i] * spread);
       tmp.addScaledVector(basis.up2, Math.sin(windA[i]) * windR[i] * spread);
       windPos.set([tmp.x, tmp.y, tmp.z], i * 3);
-      const fade = Math.min(1, p * 6) * Math.min(1, (1 - p) * 5) * (sunView ? 1 : 0);
+      const fade = Math.min(1, p * 6) * Math.min(1, (1 - p) * 5) * windVis;
       const w = (0.32 + activity * 0.35) * fade;
       windCol.set([w * 1.0, w * 0.68, w * 0.4], i * 3);
     }
