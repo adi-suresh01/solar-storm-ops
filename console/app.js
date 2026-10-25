@@ -296,7 +296,9 @@ function renderAgent() {
     return `<li class="${esc(e.kind)}${fresh ? ' fresh' : ''}"><time>${esc(hms(e.time))}</time><span>${esc(e.text)}</span></li>`;
   }).join('');
 
-  const run = (agent.runs || [])[0];
+  // only show the alert that belongs to the plan on screen, not one from an earlier run
+  const recId = risk?.recommendation?.id;
+  const run = (agent.runs || []).find((r) => recId && r.text && r.text.includes(recId));
   $('agent-msg').innerHTML = run && run.text ? `
     <div class="bubble">${esc(run.text)}</div>
     <p class="bubble-meta">Last alert, sent to ${esc(run.channel || 'Telegram')} at ${esc(hms(run.time))}. Written by ${esc(run.model)} on this GB10
@@ -314,8 +316,8 @@ function renderAgent() {
 
   const inf = agent.inference || {};
   if (inf.ok) {
-    const tps = inf.gen_tps != null ? `${Math.round(inf.gen_tps)} tokens/s now` : 'idle';
-    const gpu = inf.gpu_util != null ? `, GPU ${inf.gpu_util}% busy` : '';
+    const tps = inf.gen_tps >= 1 ? `writing ${Math.round(inf.gen_tps)} tokens/s now` : 'idle right now';
+    const gpu = inf.gpu_util ? `, GPU ${inf.gpu_util}% busy` : '';
     $('local-model').innerHTML = `Local model: <b>${esc(inf.model)}</b> on this GB10, ${esc(tps)}${esc(gpu)}`;
     $('local-detail').textContent = `${Number(inf.generation_tokens_total).toLocaleString('en-US')} tokens written locally since the model server started. No cloud model is configured.`;
   }
