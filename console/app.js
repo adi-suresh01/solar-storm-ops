@@ -97,10 +97,10 @@ function renderKp() {
   if (past[0]) svg += `<text x="${x0}" y="${y0 + 14}">${esc(fmtTime(past[0].time, true).split(' ').slice(0, 2).join(' '))}</text>`;
   if (next.length) svg += `<text x="${x1}" y="${y0 + 14}" text-anchor="end">${esc(fmtTime(next[next.length - 1].time, true).split(' ').slice(0, 2).join(' '))}</text>`;
   svg += `<line x1="${x0}" x2="${x1}" y1="${y0}" y2="${y0}" stroke="rgba(147,161,184,.35)"/>`;
-  $('kp-chart').innerHTML = svg;
-  $('kp-caption').textContent = isReplay()
-    ? 'Archived Kp from GFZ Potsdam, 3-hour bars. The right side is the Kp that followed, standing in for a forecast (SIMULATED).'
-    : 'Planetary Kp from NOAA, 3-hour bars. Past two days on the left, NOAA forecast on the right.';
+  const caption = isReplay()
+    ? 'Archived Kp from GFZ Potsdam, 3-hour bars. Right of now is the Kp that followed, standing in for a forecast (SIMULATED).'
+    : 'Planetary Kp from NOAA, 3-hour bars. Past two days left of now, NOAA forecast right of now.';
+  $('kp-chart').innerHTML = `<title>${esc(caption)}</title>` + svg;
 }
 
 function renderReadouts() {
@@ -118,9 +118,7 @@ function renderReadouts() {
       <td class="num">${m.bz_nt == null ? '-' : (m.bz_nt > 0 ? '+' : '') + Number(m.bz_nt).toFixed(1) + ' nT'}</td>
     </tr>`).join('');
   $('l1-table').querySelector('tbody').innerHTML = rows;
-  $('l1-caption').textContent = isReplay()
-    ? 'X-ray and solar wind are not part of the replay data.'
-    : rows ? 'Last reading from each spacecraft, 1.5 million km sunward of Earth. Speed and Bz per spacecraft.' : 'Waiting for the first reading.';
+  $('l1-caption').textContent = isReplay() ? 'Not in the replay data.' : rows ? '' : 'Waiting for the first reading.';
 }
 
 function renderDecision() {
@@ -131,7 +129,7 @@ function renderDecision() {
   let summary = state.alert?.summary || '';
   if (lvl === 'none') {
     const peak = Math.max(0, ...(state.kp_forecast || []).map((p) => Number(p.kp) || 0));
-    summary = `No storm in the forecast for the next 3 days (highest Kp ${peak.toFixed(1)}). Nothing needs a decision.`;
+    summary = `No storm in the 3-day forecast (peak Kp ${peak.toFixed(1)}).`;
   }
   $('alert-summary').textContent = summary;
 
@@ -149,19 +147,22 @@ function renderDecision() {
   }
   if (!rec) { $('plan').innerHTML = tail; return; }
   const hold = rec.kind === 'hold';
-  const words = { pending: hold ? 'Waiting for a hold decision' : 'Waiting for approval', approved: hold ? 'Launch held' : 'Approved',
+  const words = { pending: 'Needs a decision', approved: hold ? 'Launch held' : 'Approved',
     rejected: hold ? 'Launch goes ahead' : 'Rejected', expired: 'Expired at liftoff' };
   const decided = [...timeline].reverse().find((e) => e.kind === 'approval');
-  let html = `<div class="plan-head"><b>Plan ${esc(rec.id)}${hold ? ': hold launch ' + esc(launch?.id || '') : ''}</b><span class="status ${esc(rec.status)}">${esc(words[rec.status] || rec.status)}</span></div>
-    <ul>${(rec.actions || []).map((a) => `<li>${esc(a)}</li>`).join('')}</ul>
-    <p class="deadline">${hold ? 'Decide before liftoff' : 'Act by'}: ${esc(fmtDate(rec.deadline))}, ${esc(fmtTime(rec.deadline))} UTC</p>`;
-  if (hold && launch && launch.status === 'scheduled') {
+  const title = hold ? `Hold launch ${launch?.id || ''}` : 'Protect the satellites';
+  let html = `<div class="plan-head"><b>${esc(title)}</b><span class="status ${esc(rec.status)}">${esc(words[rec.status] || rec.status)}</span></div>
+    <p class="caption">Plan ${esc(rec.id)}</p>
+    <ul>${(rec.actions || []).map((a) => `<li>${esc(a)}</li>`).join('')}</ul>`;
+  let when = `${hold ? 'Decide before liftoff' : 'Act by'} ${esc(fmtDate(rec.deadline))}, ${esc(fmtTime(rec.deadline))} UTC`;
+  if (hold && launch && launch.status === 'scheduled' && rec.status === 'pending') {
     const mins = Math.max(0, Math.round((utc(launch.time) - utc(state.sim_time)) / 60000));
-    html += `<p class="countdown">Liftoff in ${Math.floor(mins / 60)} h ${String(mins % 60).padStart(2, '0')} min of replay time</p>`;
+    when += `<span class="countdown">, in ${Math.floor(mins / 60)} h ${String(mins % 60).padStart(2, '0')} min</span>`;
   }
+  html += `<p class="deadline">${when}</p>`;
   if (rec.status === 'pending') {
     html += `<div class="actions"><button class="approve" id="approve">${hold ? 'Hold the launch' : 'Approve plan'}</button><button class="reject" id="reject">${hold ? 'Let it launch' : 'Reject plan'}</button></div>
-      <p class="hint">The ops lead can also reply "approve" to the alert on Telegram.</p>`;
+      <p class="hint">Or reply "approve" on Telegram.</p>`;
   } else if (decided) {
     html += `<p class="hint">${esc(decided.text)}</p>`;
   }
@@ -183,9 +184,9 @@ function renderLegend() {
   if (!positions) return;
   const counts = { critical: 0, high: 0, watch: 0, fine: 0, protected: 0 };
   for (const s of positions.sats) { if (s.protected) counts.protected++; else counts[s.risk] = (counts[s.risk] || 0) + 1; }
-  const label = { critical: 'critical, below 250 km', high: 'high', watch: 'watch', fine: 'fine', protected: 'protected by an approved plan' };
+  const label = { critical: 'critical', high: 'high', watch: 'watch', fine: 'fine', protected: 'protected' };
   const sim = positions.sats.filter((s) => s.simulated).length;
-  const parts = [`<span><b>${(positions.count - sim).toLocaleString('en-US')}</b> Starlink satellites tracked${sim ? `, plus ${sim} SIMULATED in L-12` : ''}</span>`];
+  const parts = [`<span><b>${(positions.count - sim).toLocaleString('en-US')}</b> Starlink${sim ? ` + ${sim} SIMULATED` : ''}</span>`];
   for (const k of [...RISK, 'protected']) {
     if (k === 'protected' && !counts.protected) continue;
     parts.push(`<span><i style="background:var(--${k})"></i><b>${counts[k].toLocaleString('en-US')}</b> ${label[k]}</span>`);
@@ -194,9 +195,13 @@ function renderLegend() {
 }
 
 function renderNote() {
-  let note = state.note || '';
-  if (scene.view === 'sun') note += ' Sun to Earth view is not to scale; the storm cloud is drawn for illustration.';
+  // short on screen, the full honesty note on hover
+  let note = isReplay()
+    ? 'Replay: real Kp from GFZ Potsdam. Forecast, launch L-12 and its satellites are SIMULATED.'
+    : 'Live: NOAA SWPC, NASA ACE and IMAP, CelesTrak.';
+  if (scene.view === 'sun') note += ' Sun to Earth view not to scale.';
   $('note').textContent = note;
+  $('note').title = state.note || '';
 }
 
 function renderButtons() {
@@ -271,7 +276,7 @@ async function poll() {
 }
 
 // ---------------------------------------------------------------- agent + local inference
-let agent = null, lastAgentSeq = null;
+let agent = null, lastAgentSeq = null, lastGpu = null;
 const ago = (s) => {
   const sec = Math.max(0, Math.round((Date.now() - new Date(s).getTime()) / 1000));
   return sec < 90 ? `${sec} s` : `${Math.round(sec / 60)} min`;
@@ -285,15 +290,13 @@ function renderAgent() {
   const working = (ask && ask.status === 'working') || recent.length > 0 || (agent.inference?.running > 0);
   $('agent').classList.toggle('working', !!working);
   $('agent-state').textContent = ask && ask.status === 'working' ? 'answering' : working ? 'working' : 'watching';
-  $('agent-status').textContent = !agent.sandbox
-    ? 'The agent sandbox is not on this machine, so only local data is shown.'
-    : agent.checks
-      ? `Checks the risk by itself every 30 s. ${agent.checks.toLocaleString('en-US')} checks so far, the last one ${ago(agent.last_check)} ago.`
-      : 'Waiting for the first check from the agent.';
+  $('agent-status').textContent = !agent.sandbox ? 'not on this machine'
+    : agent.checks ? `${agent.checks.toLocaleString('en-US')} checks, last ${ago(agent.last_check)} ago` : 'waiting for first check';
+  $('agent-status').title = 'The agent checks the risk by itself every 30 seconds.';
 
-  $('agent-events').innerHTML = [...(agent.events || [])].reverse().slice(0, 5).map((e) => {
+  $('agent-events').innerHTML = [...(agent.events || [])].reverse().slice(0, 3).map((e) => {
     const fresh = Date.now() - new Date(e.time).getTime() < 6000;
-    return `<li class="${esc(e.kind)}${fresh ? ' fresh' : ''}"><time>${esc(hms(e.time))}</time><span>${esc(e.text)}</span></li>`;
+    return `<li class="${esc(e.kind)}${fresh ? ' fresh' : ''}"><time>${esc(hms(e.time).slice(0, 5))}</time><span title="${esc(e.text)}">${esc(e.text)}</span></li>`;
   }).join('');
 
   // only show the alert that belongs to the plan on screen, not one from an earlier run
@@ -301,25 +304,25 @@ function renderAgent() {
   const run = (agent.runs || []).find((r) => recId && r.text && r.text.includes(recId));
   $('agent-msg').innerHTML = run && run.text ? `
     <div class="bubble">${esc(run.text)}</div>
-    <p class="bubble-meta">Last alert, sent to ${esc(run.channel || 'Telegram')} at ${esc(hms(run.time))}. Written by ${esc(run.model)} on this GB10
-      in ${run.seconds} s (${Number(run.tokens_in || 0).toLocaleString('en-US')} tokens read, ${Number(run.tokens_out || 0).toLocaleString('en-US')} written).</p>` : '';
+    <p class="bubble-meta">Sent to ${esc(run.channel || 'Telegram')} at ${esc(hms(run.time).slice(0, 5))}, written on this GB10 in ${run.seconds} s</p>` : '';
 
   const btn = $('ask-button');
   btn.disabled = !!(ask && ask.status === 'working') || !agent.sandbox;
   if (!ask) $('ask-answer').innerHTML = '';
   else if (ask.status === 'working') {
-    $('ask-answer').innerHTML = `<p class="agent-status">The agent is working on it on the GB10 (${esc(ago(ask.started))}). Its tool calls show up above.</p>`;
+    $('ask-answer').innerHTML = `<p class="ask-q">Working on it, ${esc(ago(ask.started))} so far</p>`;
   } else {
-    $('ask-answer').innerHTML = `<p class="agent-status">${esc(ask.question)}</p><div class="answer">${esc(ask.answer || '')}</div>
-      ${ask.status === 'done' ? `<p class="bubble-meta">Answered in ${ask.seconds} s by the agent, using the local model.</p>` : ''}`;
+    $('ask-answer').innerHTML = `<p class="ask-q">${esc(ask.question)}</p><div class="answer">${esc(ask.answer || '')}</div>
+      ${ask.status === 'done' ? `<p class="bubble-meta">Answered in ${ask.seconds} s on this GB10</p>` : ''}`;
   }
 
   const inf = agent.inference || {};
   if (inf.ok) {
-    const tps = inf.gen_tps >= 1 ? `writing ${Math.round(inf.gen_tps)} tokens/s now` : 'idle right now';
-    const gpu = inf.gpu_util ? `, GPU ${inf.gpu_util}% busy` : '';
-    $('local-model').innerHTML = `Local model: <b>${esc(inf.model)}</b> on this GB10, ${esc(tps)}${esc(gpu)}`;
-    $('local-detail').textContent = `${Number(inf.generation_tokens_total).toLocaleString('en-US')} tokens written locally since the model server started. No cloud model is configured.`;
+    const tps = inf.gen_tps >= 1 ? `${Math.round(inf.gen_tps)} tokens/s` : 'idle';
+    const gpu = inf.gpu_util ? `, GPU ${inf.gpu_util}%` : '';
+    $('local-model').innerHTML = `<b>${esc(inf.model)}</b> on this GB10, ${esc(tps)}${esc(gpu)}`;
+    $('local-detail').textContent = `${Number(inf.generation_tokens_total).toLocaleString('en-US')} tokens written locally. No cloud model.`;
+    lastGpu = inf.gpu_util;
   }
 }
 
@@ -347,6 +350,82 @@ $('ask-form').addEventListener('submit', async (ev) => {
 setInterval(pollAgent, 2000);
 pollAgent();
 
+// ---------------------------------------------------------------- deep analysis: the local model, streamed
+let deepES = null, deepTimer = null;
+function finishDeep() {
+  if (deepES) deepES.close();
+  deepES = null;
+  clearInterval(deepTimer);
+  $('deep-button').disabled = false;
+}
+function openDeep() {
+  if (deepES) return;
+  $('deep').hidden = false;
+  const textEl = $('deep-text'), thinkEl = $('deep-thinking'), bar = $('deep-progress').firstElementChild;
+  textEl.innerHTML = '<span class="cursor"></span>';
+  thinkEl.hidden = true; thinkEl.textContent = '';
+  ['m-read', 'm-tps', 'm-gpu', 'm-time'].forEach((id) => { $(id).textContent = '-'; });
+  ['m-read-s', 'm-tps-s', 'm-time-s'].forEach((id) => { $(id).textContent = ''; });
+  $('deep-task').textContent = 'Starting the local model.';
+  $('deep-button').disabled = true;
+  bar.style.width = '0%';
+  const t0 = performance.now();
+  let ttft = null, estPrompt = 0, text = '';
+  deepTimer = setInterval(() => {
+    const el = (performance.now() - t0) / 1000;
+    $('m-time').textContent = el.toFixed(1);
+    if (lastGpu != null) $('m-gpu').textContent = `${lastGpu}%`;
+    if (ttft === null && estPrompt) bar.style.width = `${Math.min(95, (el / (estPrompt / 2000)) * 100)}%`;
+  }, 200);
+  const es = new EventSource(API + '/inference/analysis');
+  deepES = es;
+  es.onmessage = (m) => {
+    let ev;
+    try { ev = JSON.parse(m.data); } catch { return; }
+    if (ev.type === 'start') {
+      estPrompt = Math.round((ev.prompt_chars || 0) / 4);
+      $('deep-task').textContent = `${ev.task || ''} ${ev.model} reads ${Number(ev.rows || 0).toLocaleString('en-US')} satellites, the forecast, the plan and the MOCK runbook (context window ${Math.round((ev.context_window || 0) / 1024)}k tokens).`;
+      $('m-read').textContent = `~${estPrompt.toLocaleString('en-US')}`;
+      $('m-read-s').textContent = 'reading';
+    } else if (ev.type === 'prefill_done') {
+      ttft = ev.ttft_s;
+      bar.style.width = '100%';
+      $('m-read-s').textContent = `read in ${Number(ev.ttft_s).toFixed(1)} s`;
+    } else if (ev.type === 'thinking') {
+      thinkEl.hidden = false;
+      thinkEl.textContent += ev.text;
+      thinkEl.scrollTop = thinkEl.scrollHeight;
+    } else if (ev.type === 'delta') {
+      text += ev.text;
+      textEl.textContent = text;
+      textEl.insertAdjacentHTML('beforeend', '<span class="cursor"></span>');
+      textEl.scrollTop = textEl.scrollHeight;
+    } else if (ev.type === 'stats') {
+      $('m-tps').textContent = Math.round(ev.tps || 0);
+      $('m-tps-s').textContent = `${ev.completion_tokens} written`;
+    } else if (ev.type === 'done') {
+      $('m-read').textContent = Number(ev.prompt_tokens).toLocaleString('en-US');
+      $('m-read-s').textContent = `in ${Number(ev.ttft_s).toFixed(1)} s, ${Math.round(ev.prefill_tps).toLocaleString('en-US')} tokens/s`;
+      $('m-tps').textContent = Math.round(ev.decode_tps);
+      $('m-tps-s').textContent = `${ev.completion_tokens} tokens written`;
+      $('m-time').textContent = Number(ev.total_s).toFixed(1);
+      $('m-time-s').textContent = 'start to finish';
+      textEl.textContent = text;
+      finishDeep();
+    } else if (ev.type === 'error') {
+      textEl.textContent = `${text ? text + '\n\n' : ''}Stopped: ${ev.message}`;
+      finishDeep();
+    }
+  };
+  es.onerror = () => {
+    if (!deepES) return;  // normal end of stream after "done"
+    textEl.textContent = `${text}\n\nThe stream from the data API broke off.`;
+    finishDeep();
+  };
+}
+$('deep-button').addEventListener('click', openDeep);
+$('deep-close').addEventListener('click', () => { finishDeep(); $('deep').hidden = true; });
+
 document.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
 document.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => { scene.flyTo(b.dataset.view); render(); }));
 // clicked satellite: plain facts from the data, plus what the risk band means
@@ -355,7 +434,6 @@ function baseBand(alt) { return alt < 250 ? 'critical' : alt < 350 ? 'high' : al
 const BAND_RANGE = { critical: 'below 250 km', high: '250 to 350 km', watch: '350 to 450 km', fine: 'above 450 km' };
 function renderSat(s) {
   const card = $('sat-card');
-  $('sat-hint').hidden = !!s;
   if (!s) { card.hidden = true; return; }
   const a = RE + s.alt_km;
   const period = (2 * Math.PI * Math.sqrt(a ** 3 / MU)) / 60;

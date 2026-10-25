@@ -13,7 +13,7 @@
 
   <header class="bar">
     <div class="brand">
-      <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true">
+      <svg viewBox="0 0 32 32" width="24" height="24" aria-hidden="true">
         <circle cx="16" cy="16" r="6" fill="#f5b43c"/>
         <path d="M16 3v4M16 25v4M3 16h4M25 16h4M6.8 6.8l2.8 2.8M22.4 22.4l2.8 2.8M6.8 25.2l2.8-2.8M22.4 9.6l2.8-2.8" stroke="#f5b43c" stroke-width="2" stroke-linecap="round"/>
       </svg>
@@ -35,62 +35,75 @@
   </header>
 
   <aside class="instruments" aria-label="Space weather">
-    <section class="kp">
-      <div class="kp-now"><span id="kp-value">-</span><span class="kp-unit">Kp</span></div>
-      <p id="kp-phrase" class="kp-phrase">Waiting for data</p>
-      <svg id="kp-chart" viewBox="0 0 320 132" role="img" aria-label="Planetary Kp index, past 48 hours and 3 day forecast"></svg>
-      <p class="caption" id="kp-caption">Planetary Kp, 3-hour bars. Past two days on the left, forecast on the right.</p>
-    </section>
-
-    <section class="readouts">
-      <div><span class="k">X-ray</span><span class="v" id="xray">-</span></div>
-      <div><span class="k">NOAA scales</span><span class="v" id="scales">-</span></div>
-      <div><span class="k">IMF Bz</span><span class="v" id="bz">-</span></div>
-    </section>
-
+    <div class="kp-now"><span id="kp-value">-</span><span class="kp-unit">Kp</span><span id="kp-phrase" class="kp-phrase">Waiting for data</span></div>
+    <svg id="kp-chart" viewBox="0 0 320 132" role="img" aria-label="Planetary Kp index, past 48 hours and 3 day forecast"><title id="kp-caption">Planetary Kp, 3-hour bars</title></svg>
+    <dl class="readouts">
+      <div><dt>X-ray</dt><dd id="xray">-</dd></div>
+      <div><dt>Scales</dt><dd id="scales">-</dd></div>
+      <div><dt>Bz</dt><dd id="bz">-</dd></div>
+    </dl>
     <section class="l1">
       <h2>Solar wind at L1</h2>
       <table id="l1-table"><tbody></tbody></table>
       <p class="caption" id="l1-caption"></p>
     </section>
-
     <section class="sat-card" id="sat-card" hidden aria-live="polite"></section>
-    <p class="caption" id="sat-hint">Click a satellite to see its orbit and details.</p>
   </aside>
 
-  <aside class="decision" aria-label="Alert and plan">
+  <aside class="decision" aria-label="Alert, plan and agent">
     <section class="alert" id="alert">
       <h2 id="alert-title">Connecting</h2>
-      <p id="alert-summary">Reaching the data API.</p>
+      <p id="alert-summary"></p>
       <div id="groups"></div>
       <div id="plan"></div>
     </section>
     <section class="agent" id="agent" aria-live="polite">
-      <h2><span class="pulse" aria-hidden="true"></span>Agent <span id="agent-state" class="agent-state">watching</span></h2>
-      <p id="agent-status" class="agent-status">Connecting to the agent.</p>
+      <h2><span class="pulse" aria-hidden="true"></span>Agent <span id="agent-state" class="agent-state">watching</span><span id="agent-status" class="agent-checks"></span></h2>
       <ol id="agent-events"></ol>
       <div id="agent-msg"></div>
       <form id="ask-form" autocomplete="off">
         <label for="ask-input" class="sr-only">Ask the agent</label>
-        <input id="ask-input" maxlength="300" placeholder="Ask the agent, e.g. which satellites are most at risk?">
+        <input id="ask-input" maxlength="300" placeholder="Ask the agent">
         <button type="submit" id="ask-button">Ask</button>
       </form>
       <div id="ask-answer"></div>
-    </section>
-    <section class="log">
-      <h2>Event log</h2>
-      <ol id="log"></ol>
+      <details class="log">
+        <summary>Event log</summary>
+        <ol id="log"></ol>
+      </details>
     </section>
   </aside>
 
   <footer class="foot">
-    <div class="legend" id="legend" aria-label="Satellites by risk"></div>
-    <p class="note" id="note"></p>
+    <div>
+      <div class="legend" id="legend" aria-label="Satellites by risk"></div>
+      <p class="note" id="note"></p>
+    </div>
     <div class="local" id="local">
-      <p id="local-model">Local model: waiting for the inference server.</p>
-      <p id="local-detail">The model, the data and the agent stay on this Dell Pro Max GB10.</p>
+      <div>
+        <p id="local-model">Local model: waiting for the inference server</p>
+        <p id="local-detail"></p>
+      </div>
+      <button type="button" id="deep-button" class="deep-button">Deep analysis</button>
     </div>
   </footer>
+
+  <section class="deep" id="deep" hidden aria-live="polite" aria-labelledby="deep-title">
+    <header class="deep-head">
+      <h2 id="deep-title">Deep analysis on the GB10</h2>
+      <button type="button" id="deep-close" class="deep-close">Close</button>
+    </header>
+    <p class="deep-task" id="deep-task"></p>
+    <div class="meters">
+      <div><span class="m-v" id="m-read">-</span><span class="m-k">tokens read</span><span class="m-s" id="m-read-s"></span></div>
+      <div><span class="m-v" id="m-tps">-</span><span class="m-k">tokens/s writing</span><span class="m-s" id="m-tps-s"></span></div>
+      <div><span class="m-v" id="m-gpu">-</span><span class="m-k">GPU busy</span><span class="m-s">Dell Pro Max GB10</span></div>
+      <div><span class="m-v" id="m-time">-</span><span class="m-k">seconds</span><span class="m-s" id="m-time-s"></span></div>
+    </div>
+    <div class="deep-progress" id="deep-progress"><i></i></div>
+    <div class="deep-thinking" id="deep-thinking" hidden></div>
+    <div class="deep-text" id="deep-text"></div>
+  </section>
 
   <div id="offline" class="offline" hidden></div>
   <script type="module" src="app.js"></script>
