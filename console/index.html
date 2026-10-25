@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Solar Storm Ops</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="scene" aria-label="3D view of Earth, the Starlink constellation and the Sun"></canvas>
+  <div id="labels" aria-hidden="true"></div>
+  <div id="tooltip" role="status" hidden></div>
+
+  <header class="bar">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true">
+        <circle cx="16" cy="16" r="6" fill="#f5b43c"/>
+        <path d="M16 3v4M16 25v4M3 16h4M25 16h4M6.8 6.8l2.8 2.8M22.4 22.4l2.8 2.8M6.8 25.2l2.8-2.8M22.4 9.6l2.8-2.8" stroke="#f5b43c" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <span>Solar Storm Ops</span>
+    </div>
+    <nav class="switch" aria-label="Data source">
+      <button data-mode="live" aria-pressed="true">Live</button>
+      <button data-mode="feb2022">Feb 2022 storm</button>
+      <button data-mode="may2024">May 2024 storm</button>
+    </nav>
+    <nav class="switch" aria-label="View">
+      <button data-view="earth" aria-pressed="true">Earth</button>
+      <button data-view="sun">Sun to Earth</button>
+    </nav>
+    <div class="clock">
+      <span id="clock-main">--:--:-- UTC</span>
+      <span id="clock-sub"></span>
+    </div>
+  </header>
+
+  <aside class="instruments" aria-label="Space weather">
+    <section class="kp">
+      <div class="kp-now"><span id="kp-value">-</span><span class="kp-unit">Kp</span></div>
+      <p id="kp-phrase" class="kp-phrase">Waiting for data</p>
+      <svg id="kp-chart" viewBox="0 0 320 132" role="img" aria-label="Planetary Kp index, past 48 hours and 3 day forecast"></svg>
+      <p class="caption" id="kp-caption">Planetary Kp, 3-hour bars. Past two days on the left, forecast on the right.</p>
+    </section>
+
+    <section class="readouts">
+      <div><span class="k">X-ray</span><span class="v" id="xray">-</span></div>
+      <div><span class="k">NOAA scales</span><span class="v" id="scales">-</span></div>
+      <div><span class="k">IMF Bz</span><span class="v" id="bz">-</span></div>
+    </section>
+
+    <section class="l1">
+      <h2>Solar wind at L1</h2>
+      <table id="l1-table"><tbody></tbody></table>
+      <p class="caption" id="l1-caption"></p>
+    </section>
+  </aside>
+
+  <aside class="decision" aria-label="Alert and plan">
+    <section class="alert" id="alert">
+      <h2 id="alert-title">Connecting</h2>
+      <p id="alert-summary">Reaching the data API.</p>
+      <div id="groups"></div>
+      <div id="plan"></div>
+    </section>
+    <section class="log">
+      <h2>Event log</h2>
+      <ol id="log"></ol>
+    </section>
+  </aside>
+
+  <footer class="foot">
+    <div class="legend" id="legend" aria-label="Satellites by risk"></div>
+    <p class="note" id="note"></p>
+    <p class="local">Running on a Dell Pro Max GB10. The model, the data and the agent stay on this machine.</p>
+  </footer>
+
+  <div id="offline" class="offline" hidden></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

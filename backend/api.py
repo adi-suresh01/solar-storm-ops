@@ -31,7 +31,7 @@ NOAA_EVERY_S = 300
 PROPAGATE_EVERY_S = 30
 GP_CHECK_EVERY_S = 600
 LEVELS = ["none", "watch", "warning", "critical"]
-STATIC_DIRS = ("dashboard", "fixtures", "ops-data")
+STATIC_DIRS = ("console", "dashboard", "fixtures", "ops-data")
 
 
 class Run:
