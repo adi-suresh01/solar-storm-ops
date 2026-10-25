@@ -501,7 +501,9 @@ scene.onHover((h) => {
   };
   let saved = 0;
   try { saved = Number(localStorage.getItem(KEY)) || 0; } catch { /* private mode */ }
-  if (saved) { custom = true; set(saved, false); } else band.style.height = `${defaultH()}px`;
+  const forced = Number(params.get('band')) || 0;  // ?band=480 for screenshots
+  if (forced) { custom = true; set(forced, false); }
+  else if (saved) { custom = true; set(saved, false); } else band.style.height = `${defaultH()}px`;
   window.addEventListener('resize', () => { if (!custom) band.style.height = `${defaultH()}px`; });
   handle.addEventListener('pointerdown', (e) => {
     e.preventDefault();
