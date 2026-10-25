@@ -12,7 +12,6 @@ const LEVEL_RANK = { none: 0, watch: 1, warning: 2, critical: 3 };
 const RISK = ['critical', 'high', 'watch', 'fine'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-if (params.get('layout') === 'full') document.body.classList.add('full');
 const scene = createScene($('scene'), $('labels'), { reducedMotion });
 let state = null, risk = null, timeline = [], positions = null;
 let posAt = 0, lastMode = null, lastLevel = null, busy = false;
@@ -362,6 +361,7 @@ function finishDeep() {
 function openDeep() {
   if (deepES) return;
   $('deep').hidden = false;
+  $('deep').scrollIntoView({ block: 'start' });
   const textEl = $('deep-text'), thinkEl = $('deep-thinking'), bar = $('deep-progress').firstElementChild;
   textEl.innerHTML = '<span class="cursor"></span>';
   thinkEl.hidden = true; thinkEl.textContent = '';

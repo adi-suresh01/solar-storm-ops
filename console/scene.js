@@ -181,7 +181,9 @@ export function createScene(canvas, labelLayer, { reducedMotion = false } = {}) 
   controls.maxDistance = 160;
   controls.rotateSpeed = 0.5;
   controls.autoRotate = !reducedMotion;
-  controls.autoRotateSpeed = 0.18;
+  controls.autoRotateSpeed = 0.06;
+  // the page scrolls; only zoom the globe on a pinch (ctrl+wheel) or with a modifier key
+  canvas.addEventListener('wheel', (e) => { controls.enableZoom = e.ctrlKey || e.metaKey || e.altKey; }, { capture: true, passive: true });
 
   const loader = new THREE.TextureLoader();
   const tex = (url) => { const t = loader.load(url); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t; };
@@ -402,15 +404,19 @@ export function createScene(canvas, labelLayer, { reducedMotion = false } = {}) 
   // camera choreography
   let flight = null;
   const views = {
-    earth: () => ({ target: new THREE.Vector3(0, 0, 0), pos: new THREE.Vector3().copy(sunDir).multiplyScalar(2.3).add(basis.side.clone().multiplyScalar(3.9)).add(new THREE.Vector3(0, 1.5, 0)) }),
+    // mostly the sunlit side, with the day/night line visible on one edge
+    earth: () => ({ target: new THREE.Vector3(0, 0, 0), pos: new THREE.Vector3().copy(sunDir).multiplyScalar(3.4).add(basis.side.clone().multiplyScalar(2.7)).add(new THREE.Vector3(0, 1.3, 0)) }),
     sun: () => {
       // Sun on the left, Earth on the right (cause, then effect), framed wide
       // enough to clear the side panels
-      const mid = sunDir.clone().multiplyScalar(SUN_DIST * 0.45);
-      let pos = mid.clone().addScaledVector(basis.side, SUN_DIST * 1.95).addScaledVector(basis.up2, SUN_DIST * 0.35);
+      // distance so the Sun-Earth line fills about 70% of the view width
+      const mid = sunDir.clone().multiplyScalar(SUN_DIST * 0.5);
+      const halfW = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect;
+      const d = Math.max(32, (SUN_DIST + 2 * SUN_RADIUS) / (0.7 * 2 * halfW));
+      let pos = mid.clone().addScaledVector(basis.side, d).addScaledVector(basis.up2, d * 0.18);
       const fwd = mid.clone().sub(pos).normalize();
       const right = new THREE.Vector3().crossVectors(fwd, camera.up).normalize();
-      if (right.dot(sunDir) > 0) pos = mid.clone().addScaledVector(basis.side, -SUN_DIST * 1.95).addScaledVector(basis.up2, SUN_DIST * 0.35);
+      if (right.dot(sunDir) > 0) pos = mid.clone().addScaledVector(basis.side, -d).addScaledVector(basis.up2, d * 0.18);
       return { target: mid, pos };
     },
   };

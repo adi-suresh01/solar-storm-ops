@@ -7,10 +7,6 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <canvas id="scene" aria-label="3D view of Earth, the Starlink constellation and the Sun"></canvas>
-  <div id="labels" aria-hidden="true"></div>
-  <div id="tooltip" role="status" hidden></div>
-
   <header class="bar">
     <div class="brand">
       <svg viewBox="0 0 32 32" width="24" height="24" aria-hidden="true">
@@ -34,47 +30,12 @@
     </div>
   </header>
 
-  <aside class="instruments" aria-label="Space weather">
-    <div class="kp-now"><span id="kp-value">-</span><span class="kp-unit">Kp</span><span id="kp-phrase" class="kp-phrase">Waiting for data</span></div>
-    <svg id="kp-chart" viewBox="0 0 320 132" role="img" aria-label="Planetary Kp index, past 48 hours and 3 day forecast"><title id="kp-caption">Planetary Kp, 3-hour bars</title></svg>
-    <dl class="readouts">
-      <div><dt>X-ray</dt><dd id="xray">-</dd></div>
-      <div><dt>Scales</dt><dd id="scales">-</dd></div>
-      <div><dt>Bz</dt><dd id="bz">-</dd></div>
-    </dl>
-    <section class="l1">
-      <h2>Solar wind at L1</h2>
-      <table id="l1-table"><tbody></tbody></table>
-      <p class="caption" id="l1-caption"></p>
-    </section>
-    <section class="sat-card" id="sat-card" hidden aria-live="polite"></section>
-  </aside>
+  <section class="globe" aria-label="3D view of Earth, the Starlink constellation and the Sun">
+    <canvas id="scene"></canvas>
+    <div id="labels" aria-hidden="true"></div>
+  </section>
 
-  <aside class="decision" aria-label="Alert, plan and agent">
-    <section class="alert" id="alert">
-      <h2 id="alert-title">Connecting</h2>
-      <p id="alert-summary"></p>
-      <div id="groups"></div>
-      <div id="plan"></div>
-    </section>
-    <section class="agent" id="agent" aria-live="polite">
-      <h2><span class="pulse" aria-hidden="true"></span>Agent <span id="agent-state" class="agent-state">watching</span><span id="agent-status" class="agent-checks"></span></h2>
-      <ol id="agent-events"></ol>
-      <div id="agent-msg"></div>
-      <form id="ask-form" autocomplete="off">
-        <label for="ask-input" class="sr-only">Ask the agent</label>
-        <input id="ask-input" maxlength="300" placeholder="Ask the agent">
-        <button type="submit" id="ask-button">Ask</button>
-      </form>
-      <div id="ask-answer"></div>
-      <details class="log">
-        <summary>Event log</summary>
-        <ol id="log"></ol>
-      </details>
-    </section>
-  </aside>
-
-  <footer class="foot">
+  <div class="strip">
     <div>
       <div class="legend" id="legend" aria-label="Satellites by risk"></div>
       <p class="note" id="note"></p>
@@ -86,7 +47,7 @@
       </div>
       <button type="button" id="deep-button" class="deep-button">Deep analysis</button>
     </div>
-  </footer>
+  </div>
 
   <section class="deep" id="deep" hidden aria-live="polite" aria-labelledby="deep-title">
     <header class="deep-head">
@@ -105,6 +66,55 @@
     <div class="deep-text" id="deep-text"></div>
   </section>
 
+  <main class="below">
+    <section class="col instruments" aria-label="Space weather">
+      <div class="kp-now"><span id="kp-value">-</span><span class="kp-unit">Kp</span><span id="kp-phrase" class="kp-phrase">Waiting for data</span></div>
+      <svg id="kp-chart" viewBox="0 0 320 132" role="img" aria-label="Planetary Kp index, past 48 hours and 3 day forecast"></svg>
+      <dl class="readouts">
+        <div><dt>X-ray</dt><dd id="xray">-</dd></div>
+        <div><dt>Scales</dt><dd id="scales">-</dd></div>
+        <div><dt>Bz</dt><dd id="bz">-</dd></div>
+      </dl>
+      <section class="l1">
+        <h2>Solar wind at L1</h2>
+        <table id="l1-table"><tbody></tbody></table>
+        <p class="caption" id="l1-caption"></p>
+      </section>
+    </section>
+
+    <section class="col decision" aria-label="Alert and plan">
+      <section class="alert" id="alert">
+        <h2 id="alert-title">Connecting</h2>
+        <p id="alert-summary"></p>
+        <div id="groups"></div>
+        <div id="plan"></div>
+      </section>
+      <section class="sat-card" id="sat-card" hidden aria-live="polite"></section>
+    </section>
+
+    <section class="col agent" id="agent" aria-live="polite">
+      <h2><span class="pulse" aria-hidden="true"></span>Agent <span id="agent-state" class="agent-state">watching</span><span id="agent-status" class="agent-checks"></span></h2>
+      <ol id="agent-events"></ol>
+      <div id="agent-msg"></div>
+      <form id="ask-form" autocomplete="off">
+        <label for="ask-input" class="sr-only">Ask the agent</label>
+        <input id="ask-input" maxlength="300" placeholder="Ask the agent">
+        <button type="submit" id="ask-button">Ask</button>
+      </form>
+      <div id="ask-answer"></div>
+      <details class="log">
+        <summary>Event log</summary>
+        <ol id="log"></ol>
+      </details>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <p>Running on a Dell Pro Max GB10. The model, the data and the agent stay on this machine.
+      Drag the globe to turn it; pinch, or hold Ctrl and scroll, to zoom. Click a satellite for details.</p>
+  </footer>
+
+  <div id="tooltip" role="status" hidden></div>
   <div id="offline" class="offline" hidden></div>
   <script type="module" src="app.js"></script>
 </body>
