@@ -480,6 +480,43 @@ scene.onHover((h) => {
   tip.hidden = false;
 });
 
+// ---------------------------------------------------------------- resizable globe band
+(() => {
+  const band = document.querySelector('.globe');
+  const handle = $('globe-resize');
+  const KEY = 'spf5000-globe-h';
+  const maxH = () => window.innerHeight - document.querySelector('.bar').offsetHeight;
+  const set = (h, remember = true) => {
+    h = Math.max(240, Math.min(maxH(), h));
+    band.style.height = `${h}px`;
+    if (remember) { try { localStorage.setItem(KEY, String(Math.round(h))); } catch { /* private mode */ } }
+  };
+  const reset = () => { band.style.height = ''; try { localStorage.removeItem(KEY); } catch { /* private mode */ } };
+  try { const saved = Number(localStorage.getItem(KEY)); if (saved) set(saved, false); } catch { /* private mode */ }
+  handle.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    handle.classList.add('dragging');
+    const y0 = e.clientY, h0 = band.getBoundingClientRect().height;
+    const move = (ev) => set(h0 + ev.clientY - y0);
+    const up = () => {
+      handle.classList.remove('dragging');
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+  });
+  handle.addEventListener('dblclick', () => {
+    if (band.getBoundingClientRect().height < maxH() - 20) set(maxH()); else reset();
+  });
+  handle.addEventListener('keydown', (e) => {
+    const h = band.getBoundingClientRect().height;
+    if (e.key === 'ArrowDown') { e.preventDefault(); set(h + 40); }
+    if (e.key === 'ArrowUp') { e.preventDefault(); set(h - 40); }
+  });
+})();
+
 if (params.get('view')) setTimeout(() => scene.flyTo(params.get('view'), 0.01), 1500);
 if (params.get('cme')) setTimeout(() => scene.launchCME(), Number(params.get('cme')));  // for screenshots
 if (params.get('select')) setTimeout(() => scene.selectId(params.get('select')), 12500);  // for screenshots

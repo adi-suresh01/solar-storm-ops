@@ -54,6 +54,12 @@ button { font: inherit; color: inherit; }
 #scene { display: block; width: 100%; height: 100%; cursor: grab; }
 #scene:active { cursor: grabbing; }
 #labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.globe-resize {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 14px; z-index: 2; cursor: ns-resize;
+  display: flex; align-items: center; justify-content: center; touch-action: none;
+}
+.globe-resize::after { content: ""; width: 56px; height: 4px; border-radius: 2px; background: var(--ink-3); opacity: 0.55; }
+.globe-resize:hover::after, .globe-resize:focus-visible::after, .globe-resize.dragging::after { background: var(--ink); opacity: 1; }
 
 /* strip under the globe: what the dots are, and what is computing */
 .strip { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 12px 24px; border-bottom: 1px solid var(--line); font-size: var(--s1); }
