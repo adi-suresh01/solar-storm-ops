@@ -355,15 +355,18 @@ class Engine:
             note = str(body.get("note") or "").strip()[:300]
             rec["status"] = decision
             rec["by"] = str(body.get("by") or "telegram")[:80]
+            by = rec["by"].lower()
+            where = ("on Telegram" if by.startswith("telegram") else
+                     "on the dashboard" if "dashboard" in by else f"({rec['by']})")
             if decision == "approved":
                 run.protected = True
-                self._log(run, when, "approval", "Approved by ops lead on Telegram.")
+                self._log(run, when, "approval", f"Approved by ops lead {where}.")
                 text = f"Plan {rec['id']} logged: " + "; ".join(rec["actions"]) + "."
                 self._log(run, when + timedelta(seconds=5), "action",
                           text + (f" Note: {note}" if note else ""))
             else:
                 self._log(run, when, "approval",
-                          "Rejected by ops lead on Telegram." + (f" Note: {note}" if note else ""))
+                          f"Rejected by ops lead {where}." + (f" Note: {note}" if note else ""))
             run.a = self._assess(run, run.a["when"])
             self._render_positions()
             return 200, {"ok": True, "recommendation": rec}
