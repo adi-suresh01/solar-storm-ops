@@ -1,0 +1,34 @@
+{
+  "label": "MOCK OPERATOR DATA — DEMONSTRATION ONLY",
+  "as_of_utc": "2026-10-25T00:00:00Z",
+  "disclaimer": "This schedule is fictional and is not affiliated with SpaceX or any launch provider. Do not use for operational decisions.",
+  "launches": [
+    {
+      "id": "L-12",
+      "window_utc": "2026-10-26 14:00–16:00",
+      "vehicle": "Falcon 9 (mock)",
+      "payload": "49 small satellites",
+      "target_orbit_km": 210,
+      "status": "planning",
+      "label": "SIMULATED BATCH"
+    },
+    {
+      "id": "L-13",
+      "window_utc": "2026-10-29 08:30–10:30",
+      "vehicle": "Medium-lift vehicle (mock)",
+      "payload": "24 small satellites",
+      "target_orbit_km": 450,
+      "status": "planning",
+      "label": "MOCK"
+    },
+    {
+      "id": "L-14",
+      "window_utc": "2026-11-02 17:00–19:00",
+      "vehicle": "Falcon 9 (mock)",
+      "payload": "18 small satellites",
+      "target_orbit_km": 550,
+      "status": "planning",
+      "label": "MOCK"
+    }
+  ]
+}

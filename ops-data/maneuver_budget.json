@@ -1,0 +1,37 @@
+{
+  "label": "MOCK OPERATOR DATA — DEMONSTRATION ONLY",
+  "currency": "illustrative fuel-equivalent units",
+  "disclaimer": "Fictional example values only. Not a spacecraft capability, propellant estimate, or flight instruction. Real planning requires mission-specific verified data and qualified operators.",
+  "groups": [
+    {
+      "name": "L-12 launch batch",
+      "satellites": 49,
+      "status": "SIMULATED",
+      "current_altitude_km": 210,
+      "example_option": "Review orbit-raising feasibility with flight dynamics",
+      "delta_v_m_s": 120,
+      "fuel_kg_per_satellite": 8.5,
+      "confidence": "illustrative only"
+    },
+    {
+      "name": "Orbit-raising group",
+      "satellites": 151,
+      "status": "MOCK",
+      "current_altitude_km": 252,
+      "example_option": "Review current raising profile and any planned lowering burns",
+      "delta_v_m_s": 65,
+      "fuel_kg_per_satellite": 4.2,
+      "confidence": "illustrative only"
+    },
+    {
+      "name": "Operational constellation",
+      "satellites": 10912,
+      "status": "MOCK",
+      "current_altitude_km": null,
+      "example_option": "Prioritize assessment using validated mission constraints",
+      "delta_v_m_s": null,
+      "fuel_kg_per_satellite": null,
+      "confidence": "not estimated"
+    }
+  ]
+}

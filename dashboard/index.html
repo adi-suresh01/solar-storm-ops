@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#071018">
+  <meta name="description" content="Local-first space weather and satellite operations console.">
+  <title>Solar Storm Ops — Mission Control</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#top" aria-label="Solar Storm Ops home">
+        <span class="brand-mark"><span></span><span></span><span></span></span>
+        <span class="brand-name">SOLAR<span>STORM</span><small>OPS / FLIGHT DESK</small></span>
+      </a>
+      <div class="topbar-center"><span class="live-dot"></span><span id="connection-label">FIXTURE MODE</span><span class="topbar-divider"></span><span id="clock">--:--:-- UTC</span></div>
+      <div class="topbar-right"><span class="local-badge"><span class="lock-icon">▣</span> LOCAL-FIRST</span><button class="icon-button" id="refresh-button" title="Refresh data" aria-label="Refresh data">↻</button></div>
+    </header>
+
+    <main id="top">
+      <section class="alert-strip alert-none" id="alert-strip" aria-live="polite">
+        <span class="alert-icon" id="alert-icon">✳</span>
+        <div class="alert-copy"><strong id="alert-title">ALL SYSTEMS NOMINAL</strong><span id="alert-summary">Loading space weather and constellation data…</span></div>
+        <span class="alert-time" id="alert-time">—</span>
+      </section>
+
+      <section class="toolbar" aria-label="Replay controls">
+        <div class="section-eyebrow"><span class="eyebrow-line"></span> OPERATIONS OVERVIEW</div>
+        <div class="toolbar-right">
+          <span class="mode-tag" id="mode-tag">LIVE / FIXTURES</span>
+          <span class="toolbar-label">SCENARIO</span>
+          <div class="segmented" role="group" aria-label="Select replay scenario">
+            <button class="scenario-button active" data-scenario="live">LIVE</button>
+            <button class="scenario-button" data-scenario="feb2022">FEB ’22</button>
+            <button class="scenario-button" data-scenario="may2024">MAY ’24</button>
+          </div>
+        </div>
+      </section>
+
+      <div class="dashboard-grid">
+        <section class="panel globe-panel">
+          <div class="panel-heading globe-heading">
+            <div><span class="panel-kicker">ORBITAL PICTURE <span class="mock-chip" id="positions-source">PUBLIC GP DATA</span></span><h1>Constellation <span class="heading-muted">/ Earth view</span></h1></div>
+            <div class="sat-count"><strong id="sat-total">—</strong><span>TRACKED OBJECTS</span></div>
+          </div>
+          <div class="globe-wrap" id="globe-wrap">
+            <div id="globe" aria-label="Interactive 3D globe showing satellite positions"></div>
+            <div class="globe-overlay top-left"><span class="crosshair">⌖</span><span>EARTH / LEO</span></div>
+            <div class="globe-overlay top-right"><span id="position-time">POSITION EPOCH —</span><span class="globe-separator">·</span><span>ALTITUDE EXAGGERATED</span></div>
+            <div class="globe-overlay bottom-left"><span class="axis-dot"></span><span id="globe-status">INITIALIZING ORBITAL VIEW</span></div>
+            <div class="globe-overlay bottom-right"><span>DRAG TO ROTATE</span><span class="globe-separator">/</span><span>SCROLL TO ZOOM</span></div>
+            <div class="globe-loading" id="globe-loading"><span class="loader"></span><span>BUILDING ORBITAL PICTURE</span></div>
+          </div>
+          <div class="legend-row">
+            <div class="legend-item"><i class="legend-dot critical"></i><span>CRITICAL</span><b id="count-critical">—</b></div>
+            <div class="legend-item"><i class="legend-dot high"></i><span>HIGH</span><b id="count-high">—</b></div>
+            <div class="legend-item"><i class="legend-dot watch"></i><span>WATCH</span><b id="count-watch">—</b></div>
+            <div class="legend-item"><i class="legend-dot fine"></i><span>FINE</span><b id="count-fine">—</b></div>
+            <div class="legend-note">RISK BANDS FROM MEAN ALTITUDE</div>
+          </div>
+        </section>
+
+        <aside class="right-column">
+          <section class="panel space-weather-panel">
+            <div class="panel-heading compact-heading"><div><span class="panel-kicker">SPACE WEATHER</span><h2>Solar conditions</h2></div><span class="weather-stamp" id="weather-stamp">NOAA / SWPC</span></div>
+            <div class="kp-card">
+              <div class="kp-gauge" id="kp-gauge" role="img" aria-label="Current geomagnetic Kp index"><div class="kp-gauge-inner"><strong id="kp-now">—</strong><span>Kp INDEX</span></div></div>
+              <div class="kp-info"><div class="kp-label">GEOMAGNETIC ACTIVITY</div><strong id="kp-status">—</strong><div class="kp-sub" id="kp-peak">Forecast peak —</div><div class="kp-forecast" id="kp-forecast" aria-label="Kp forecast sparkline"></div></div>
+            </div>
+            <div class="weather-metrics">
+              <div class="weather-metric"><span>X-RAY CLASS</span><strong id="xray-class">—</strong><small id="xray-flux">Flux —</small></div>
+              <div class="weather-metric"><span>SOLAR WIND</span><strong id="solar-wind">—</strong><small>km/s</small></div>
+            </div>
+            <div class="noaa-scales">
+              <span class="scales-title">NOAA SCALES</span>
+              <div class="scale"><span>R</span><b id="scale-r">—</b></div><div class="scale"><span>S</span><b id="scale-s">—</b></div><div class="scale"><span>G</span><b id="scale-g">—</b></div>
+            </div>
+          </section>
+
+          <section class="panel recommendation-panel" id="recommendation-panel">
+            <div class="panel-heading compact-heading"><div><span class="panel-kicker">DECISION SUPPORT</span><h2>Ops recommendation</h2></div><span class="status-pill" id="rec-status">CLEAR</span></div>
+            <div id="recommendation-content" class="recommendation-content"><div class="clear-state"><span class="clear-check">✓</span><div><strong>No action required</strong><p>Monitoring continues. The agent stays quiet while conditions are nominal.</p></div></div></div>
+            <div class="approval-actions" id="approval-actions" hidden><button class="approve-button" id="approve-button">✓ &nbsp; APPROVE PLAN</button><button class="reject-button" id="reject-button">REJECT</button></div>
+          </section>
+        </aside>
+      </div>
+
+      <section class="bottom-grid">
+        <section class="panel timeline-panel">
+          <div class="panel-heading compact-heading"><div><span class="panel-kicker">EVENT LOG</span><h2>Operations timeline</h2></div><span class="timeline-count" id="timeline-count">0 EVENTS</span></div>
+          <div class="timeline-list" id="timeline-list"><div class="timeline-empty">Connecting to the event stream…</div></div>
+        </section>
+        <section class="panel operator-panel">
+          <div class="panel-heading compact-heading"><div><span class="panel-kicker">OPERATOR CONTEXT</span><h2>Next launch window</h2></div><span class="mock-chip">MOCK DATA</span></div>
+          <div id="launch-list" class="launch-list"><div class="timeline-empty">Loading mock schedule…</div></div>
+          <div class="operator-footnote"><span class="footnote-icon">ⓘ</span> Example operator schedule &amp; maneuver figures. Not operational guidance.</div>
+        </section>
+      </section>
+
+      <footer class="footer"><span>PUBLIC SPACE-WEATHER DATA · DEMONSTRATION CONSOLE</span><span id="footer-mode">FIXTURE DATA · NO LIVE CONNECTION</span><span>SOLAR STORM OPS <b>●</b> GB10 LOCAL-FIRST</span></footer>
+    </main>
+  </div>
+  <script src="vendor/globe.gl.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
