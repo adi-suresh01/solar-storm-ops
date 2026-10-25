@@ -28,7 +28,7 @@ from watcher import (BANDS, LOW_KM, OFFLINE, ROOT, STATE_DIR, Constellation, ass
                      shift)
 
 NOAA_EVERY_S = 300
-PROPAGATE_EVERY_S = 30
+PROPAGATE_EVERY_S = 10
 GP_CHECK_EVERY_S = 600
 LEVELS = ["none", "watch", "warning", "critical"]
 STATIC_DIRS = ("console", "dashboard", "fixtures", "ops-data")

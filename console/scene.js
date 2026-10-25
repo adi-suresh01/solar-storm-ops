@@ -240,9 +240,10 @@ export function createScene(canvas, labelLayer, { reducedMotion = false } = {}) 
   // satellites
   const MAX_SATS = 12000;
   const satGeo = new THREE.BufferGeometry();
-  const satPos = new Float32Array(MAX_SATS * 3);
-  const satFrom = new Float32Array(MAX_SATS * 3);
-  const satTo = new Float32Array(MAX_SATS * 3);
+  const satPos = new Float32Array(MAX_SATS * 3);   // rendered
+  const satTo = new Float32Array(MAX_SATS * 3);    // latest fix from the API
+  const satVel = new Float32Array(MAX_SATS * 3);   // scene units per ms, from the last two fixes
+  let fixTime = 0;                                 // wall-clock ms of the latest fix
   const satCol = new Float32Array(MAX_SATS * 3);
   const satSize = new Float32Array(MAX_SATS);
   satGeo.setAttribute('position', new THREE.BufferAttribute(satPos, 3).setUsage(THREE.DynamicDrawUsage));
@@ -255,9 +256,32 @@ export function createScene(canvas, labelLayer, { reducedMotion = false } = {}) 
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   });
   const windMat = satMat.clone();
+  // positions change every frame, so give raycasting a fixed bound around the shell
+  satGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1.3);
   const sats = new THREE.Points(satGeo, satMat);
   sats.frustumCulled = false;
   scene.add(sats);
+
+  // selection: ring marker + the orbit plane drawn as a circle (assumes a near-circular orbit)
+  const ringTex = (() => {
+    const c = document.createElement('canvas'); c.width = c.height = 128;
+    const g = c.getContext('2d'); g.strokeStyle = '#ffffff'; g.lineWidth = 7;
+    g.beginPath(); g.arc(64, 64, 52, 0, Math.PI * 2); g.stroke();
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+  })();
+  const marker = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTex, sizeAttenuation: false, depthWrite: false, transparent: true }));
+  marker.scale.setScalar(0.034);
+  marker.visible = false;
+  marker.renderOrder = 10;
+  scene.add(marker);
+  const ORBIT_SEG = 256;
+  const orbitGeo = new THREE.BufferGeometry();
+  orbitGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array((ORBIT_SEG + 1) * 3), 3));
+  const orbitLine = new THREE.Line(orbitGeo, new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55 }));
+  orbitLine.visible = false;
+  orbitLine.frustumCulled = false;
+  scene.add(orbitLine);
+  let selId = null, selIdx = -1, selectCb = null, orbitWanted = false;
   let satList = [], satCount = 0, satStamp = 0, satIds = [], batchIdx = [];
   const batchCenter = new THREE.Vector3();
   function updateBatchCenter() {
@@ -401,7 +425,65 @@ export function createScene(canvas, labelLayer, { reducedMotion = false } = {}) 
     pointer = { x: e.clientX - r.left, y: e.clientY - r.top };
   });
   canvas.addEventListener('pointerleave', () => { pointer = null; hoverCb && hoverCb(null); });
-  canvas.addEventListener('pointerdown', () => { controls.autoRotate = false; });
+  let downAt = null;
+  canvas.addEventListener('pointerdown', (e) => { controls.autoRotate = false; downAt = { x: e.clientX, y: e.clientY }; });
+  canvas.addEventListener('pointerup', (e) => {
+    if (!downAt || Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > 5) return;  // that was a drag
+    const r = canvas.getBoundingClientRect();
+    mouse.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    select(pick());
+  });
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape') select(-1); });
+
+  // nearest satellite under the pointer that is not hidden behind Earth
+  const earthSphere = new THREE.Sphere(new THREE.Vector3(), 1);
+  function pick() {
+    if (camera.position.length() > 20 || !satCount) return -1;
+    raycaster.setFromCamera(mouse, camera);
+    const pxThreshold = 0.013 * camera.position.distanceTo(controls.target) / 4;
+    raycaster.params.Points.threshold = pxThreshold;
+    const hitEarth = raycaster.ray.intersectSphere(earthSphere, new THREE.Vector3());
+    const earthDist = hitEarth ? hitEarth.distanceTo(raycaster.ray.origin) : Infinity;
+    const hits = raycaster.intersectObject(sats, false)
+      .filter((x) => x.index < satCount && x.distance < earthDist)
+      .sort((a, b) => a.distanceToRay - b.distanceToRay);
+    return hits.length ? hits[0].index : -1;
+  }
+
+  function orbitFor(i) {
+    const r = new THREE.Vector3(satTo[i * 3], satTo[i * 3 + 1], satTo[i * 3 + 2]);
+    const v = new THREE.Vector3(satVel[i * 3], satVel[i * 3 + 1], satVel[i * 3 + 2]);
+    if (v.lengthSq() < 1e-20) { orbitWanted = false; return; }
+    const u = r.clone().normalize();
+    const n = new THREE.Vector3().crossVectors(r, v).normalize();
+    const w = new THREE.Vector3().crossVectors(n, u);
+    const R = r.length(), arr = orbitGeo.attributes.position.array;
+    for (let k = 0; k <= ORBIT_SEG; k++) {
+      const a = (k / ORBIT_SEG) * Math.PI * 2;
+      arr[k * 3] = R * (Math.cos(a) * u.x + Math.sin(a) * w.x);
+      arr[k * 3 + 1] = R * (Math.cos(a) * u.y + Math.sin(a) * w.y);
+      arr[k * 3 + 2] = R * (Math.cos(a) * u.z + Math.sin(a) * w.z);
+    }
+    orbitGeo.attributes.position.needsUpdate = true;
+    orbitWanted = true;
+  }
+
+  function select(i) {
+    selIdx = i;
+    selId = i >= 0 ? satList[i].id : null;
+    marker.visible = i >= 0;
+    if (i >= 0) {
+      const s = satList[i];
+      const c = s.protected ? RISK_COLORS.protected : (RISK_COLORS[s.risk] || RISK_COLORS.fine);
+      marker.material.color.copy(c);
+      orbitLine.material.color.copy(c);
+      orbitFor(i);
+    } else {
+      orbitWanted = false;
+      orbitLine.visible = false;
+    }
+    selectCb && selectCb(i >= 0 ? satList[i] : null);
+  }
 
   function resize() {
     const w = canvas.clientWidth, h = canvas.clientHeight;
@@ -428,10 +510,10 @@ export function createScene(canvas, labelLayer, { reducedMotion = false } = {}) 
     }
     controls.update();
 
-    // satellites: interpolate between the last two position fixes (10 s apart)
+    // satellites: dead-reckon from the latest fix with the velocity from the last two
     if (satCount) {
-      const k = Math.min(1, (performance.now() - satStamp) / 10000);
-      for (let i = 0; i < satCount * 3; i++) satPos[i] = satFrom[i] + (satTo[i] - satFrom[i]) * k;
+      const k = Math.min(Math.max(Date.now() - fixTime, 0), 90000);
+      for (let i = 0; i < satCount * 3; i++) satPos[i] = satTo[i] + satVel[i] * k;
       satGeo.attributes.position.needsUpdate = true;
     }
 
@@ -517,12 +599,19 @@ export function createScene(canvas, labelLayer, { reducedMotion = false } = {}) 
       show('batch', c.multiplyScalar(1.04), `L-12, 49 SIMULATED satellites${safe ? ', protected' : ' at ~210 km'}`, safe ? 'batch safe' : 'batch', !sunView && facing);
     } else if (labels.batch) labels.batch.style.display = 'none';
 
+    // selected satellite marker follows the interpolated position
+    if (selIdx >= 0 && selIdx < satCount) {
+      marker.position.set(satPos[selIdx * 3], satPos[selIdx * 3 + 1], satPos[selIdx * 3 + 2]);
+      marker.visible = !sunView;
+      orbitLine.visible = orbitWanted && !sunView;
+    }
+
     // hover
-    if (hoverCb && pointer && t - lastPick > 0.08 && !sunView) {
+    if (hoverCb && pointer && t - lastPick > 0.08) {
       lastPick = t;
-      raycaster.setFromCamera(mouse, camera);
-      const hit = raycaster.intersectObject(sats, false).find((x) => x.index < satCount && x.distanceToRay < 0.012);
-      hoverCb(hit ? { sat: satList[hit.index], x: pointer.x, y: pointer.y } : null);
+      const i = sunView ? -1 : pick();
+      hoverCb(i >= 0 ? { sat: satList[i], x: pointer.x, y: pointer.y } : null);
+      canvas.style.cursor = i >= 0 ? 'pointer' : '';
     }
 
     renderer.render(scene, camera);
@@ -538,14 +627,24 @@ export function createScene(canvas, labelLayer, { reducedMotion = false } = {}) 
     setPositions(doc) {
       const list = doc.sats || [];
       const n = Math.min(list.length, MAX_SATS);
-      const sameSet = n === satCount && list.every((s, i) => i >= n || satIds[i] === s.id);
-      // start the new leg from where the dots are now
-      if (sameSet) satFrom.set(satPos.subarray(0, n * 3));
+      const t = Date.parse(doc.time) || Date.now();
+      const newFix = t !== fixTime;      // the API recomputes positions on its own clock
+      const dt = t - fixTime;
+      let same = 0;                      // leading ids unchanged (L-12 is appended at the end)
+      while (same < Math.min(n, satCount) && satIds[same] === list[same].id) same++;
       for (let i = 0; i < n; i++) {
         const s = list[i];
-        llToVec(s.lat, s.lon, 1 + s.alt_km / RE_KM, tmp);
-        satTo.set([tmp.x, tmp.y, tmp.z], i * 3);
-        if (!sameSet) satFrom.set([tmp.x, tmp.y, tmp.z], i * 3);
+        if (newFix) {
+          llToVec(s.lat, s.lon, 1 + s.alt_km / RE_KM, tmp);
+          if (i < same && dt > 0 && dt < 120000) {
+            satVel[i * 3] = (tmp.x - satTo[i * 3]) / dt;
+            satVel[i * 3 + 1] = (tmp.y - satTo[i * 3 + 1]) / dt;
+            satVel[i * 3 + 2] = (tmp.z - satTo[i * 3 + 2]) / dt;
+          } else if (i >= same) {
+            satVel[i * 3] = satVel[i * 3 + 1] = satVel[i * 3 + 2] = 0;
+          }
+          satTo.set([tmp.x, tmp.y, tmp.z], i * 3);
+        }
         const c = s.protected ? RISK_COLORS.protected : (RISK_COLORS[s.risk] || RISK_COLORS.fine);
         satCol.set([c.r, c.g, c.b], i * 3);
         satSize[i] = s.simulated ? 4.6 : s.risk === 'critical' ? 3.6 : s.risk === 'high' ? 2.9 : 2.2;
@@ -554,9 +653,12 @@ export function createScene(canvas, labelLayer, { reducedMotion = false } = {}) 
       satIds = satList.map((s) => s.id);
       batchIdx = [];
       satList.forEach((s, i) => { if (s.simulated) batchIdx.push(i); });
-      if (!sameSet) satPos.set(satTo.subarray(0, n * 3));
+      if (newFix) fixTime = t;
       satCount = n;
-      satStamp = performance.now();
+      if (selId !== null) {  // keep the selection across refreshes and replays
+        const i = satList.findIndex((s) => s.id === selId);
+        if (i >= 0) select(i); else select(-1);
+      }
       satGeo.setDrawRange(0, n);
       satGeo.attributes.aColor.needsUpdate = true;
       satGeo.attributes.aSize.needsUpdate = true;
@@ -574,5 +676,8 @@ export function createScene(canvas, labelLayer, { reducedMotion = false } = {}) 
     flyTo,
     get view() { return view; },
     onHover(cb) { hoverCb = cb; },
+    onSelect(cb) { selectCb = cb; },
+    clearSelection() { select(-1); },
+    selectId(id) { select(satList.findIndex((s) => String(s.id) === String(id))); },
   };
 }

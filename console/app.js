@@ -4,6 +4,7 @@ import { createScene } from './scene.js';
 const params = new URLSearchParams(location.search);
 const API = (params.get('api') || location.origin).replace(/\/$/, '');
 const REPLAY_SPEED = Number(params.get('speed') || 720);
+const POS_EVERY_MS = Number(params.get('posEvery') || 10000);  // /positions is ~1 MB, keep it at 10 s
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -226,7 +227,7 @@ function showOffline(msg) { const el = $('offline'); el.textContent = msg; el.hi
 async function poll() {
   try {
     [state, risk, timeline] = await Promise.all([get('/state'), get('/risk'), get('/timeline')]);
-    if (Date.now() - posAt > 10000) {
+    if (Date.now() - posAt > POS_EVERY_MS) {
       positions = await get('/positions');
       posAt = Date.now();
       scene.setPositions(positions);
@@ -256,6 +257,41 @@ async function poll() {
 
 document.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
 document.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => { scene.flyTo(b.dataset.view); render(); }));
+// clicked satellite: plain facts from the data, plus what the risk band means
+const MU = 398600.4418, RE = 6371;
+function baseBand(alt) { return alt < 250 ? 'critical' : alt < 350 ? 'high' : alt < 450 ? 'watch' : 'fine'; }
+const BAND_RANGE = { critical: 'below 250 km', high: '250 to 350 km', watch: '350 to 450 km', fine: 'above 450 km' };
+function renderSat(s) {
+  const card = $('sat-card');
+  $('sat-hint').hidden = !!s;
+  if (!s) { card.hidden = true; return; }
+  const a = RE + s.alt_km;
+  const period = (2 * Math.PI * Math.sqrt(a ** 3 / MU)) / 60;
+  const speed = Math.sqrt(MU / a);
+  const base = baseBand(s.alt_km);
+  const lat = `${Math.abs(s.lat).toFixed(1)} ${s.lat >= 0 ? 'N' : 'S'}`;
+  const lon = `${Math.abs(s.lon).toFixed(1)} ${s.lon >= 0 ? 'E' : 'W'}`;
+  let why = s.risk === base
+    ? `Risk comes from altitude: ${esc(base)} means ${BAND_RANGE[base]}.`
+    : `At ${Math.round(s.alt_km)} km it is normally ${esc(base)}. The storm forecast raises it to ${esc(s.risk)}, because a storm heats and thickens the upper atmosphere and drag goes up.`;
+  if (s.simulated) why += ' Part of launch batch L-12, a SIMULATED stand-in for the Feb 2022 launch.';
+  if (s.protected) why += ' Protected by the approved plan.';
+  card.style.setProperty('--sel', `var(--${s.protected ? 'protected' : s.risk})`);
+  card.innerHTML = `
+    <h2><span>${esc(s.name)}</span><button type="button" id="sat-close" aria-label="Clear selection">Clear</button></h2>
+    <p class="caption">${s.simulated ? 'SIMULATED object' : `NORAD catalog number ${esc(s.id)}`}</p>
+    <dl>
+      <dt>Altitude</dt><dd>${Math.round(s.alt_km)} km</dd>
+      <dt>Risk</dt><dd>${esc(s.protected ? 'protected' : s.risk)}</dd>
+      <dt>Over</dt><dd>${lat}, ${lon}</dd>
+      <dt>One orbit</dt><dd>${period.toFixed(1)} min at ${speed.toFixed(2)} km/s</dd>
+    </dl>
+    <p class="why">${why}</p>`;
+  card.hidden = false;
+  $('sat-close').addEventListener('click', () => scene.clearSelection());
+}
+scene.onSelect(renderSat);
+
 scene.onHover((h) => {
   const tip = $('tooltip');
   if (!h || !h.sat) { tip.hidden = true; return; }
@@ -269,6 +305,7 @@ scene.onHover((h) => {
 
 if (params.get('view')) setTimeout(() => scene.flyTo(params.get('view'), 0.01), 1500);
 if (params.get('cme')) setTimeout(() => scene.launchCME(), Number(params.get('cme')));  // for screenshots
+if (params.get('select')) setTimeout(() => scene.selectId(params.get('select')), 12500);  // for screenshots
 setInterval(renderClock, 1000);
 setInterval(poll, 2000);
 poll();

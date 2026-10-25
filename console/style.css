@@ -84,6 +84,15 @@ button { font: inherit; color: inherit; }
 .l1 td.num { text-align: right; padding-left: 12px; }
 .l1 tr.active td:first-child::after { content: " in use by NOAA"; color: var(--ink-3); font-size: var(--s1); }
 
+.sat-card { border-left: 3px solid var(--sel, var(--fine)); padding: 2px 0 2px 12px; }
+.sat-card h2 { font-size: var(--s3); margin-bottom: 2px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.sat-card h2 button { background: none; border: 0; color: var(--ink-3); cursor: pointer; font-size: var(--s1); padding: 0; }
+.sat-card h2 button:hover { color: var(--ink); }
+.sat-card dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; margin: 8px 0 0; }
+.sat-card dt { color: var(--ink-2); font-size: var(--s1); }
+.sat-card dd { margin: 0; }
+.sat-card .why { font-size: var(--s1); color: var(--ink-2); margin-top: 8px; max-width: 36ch; }
+
 /* right: the one boxed thing, because it asks for a decision */
 .decision {
   position: fixed; top: 76px; right: 20px; width: 380px; max-height: calc(100vh - 170px);
