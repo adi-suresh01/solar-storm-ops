@@ -21,6 +21,7 @@ from urllib.parse import parse_qs, unquote
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from agent_bridge import AgentBridge  # noqa: E402
+from inference import serve_analysis  # noqa: E402
 from replay import SCENARIOS, Replay  # noqa: E402
 from watcher import (BANDS, L12_COUNT, LOW_KM, OFFLINE, ROOT, STATE_DIR,  # noqa: E402
                      Constellation, assess, build_hold_recommendation,
@@ -562,6 +563,11 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/agent":
                 return self._send(200, self.bridge.snapshot() if self.bridge else {})
+            if path == "/inference/analysis":
+                if self._from_agent():  # console only, never the sandbox
+                    return self._send(403, {"ok": False, "error": "not for the agent"})
+                thinking = parse_qs(qs).get("thinking", ["0"])[0] == "1"
+                return serve_analysis(self, e, thinking=thinking)
             if path == "/state":
                 return self._send(200, e.state())
             if path == "/positions":

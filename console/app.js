@@ -291,7 +291,7 @@ function renderAgent() {
   $('agent').classList.toggle('working', !!working);
   $('agent-state').textContent = ask && ask.status === 'working' ? 'answering' : working ? 'working' : 'watching';
   $('agent-status').textContent = !agent.sandbox ? 'not on this machine'
-    : agent.checks ? `${agent.checks.toLocaleString('en-US')} checks, last ${ago(agent.last_check)} ago` : 'waiting for first check';
+    : agent.checks ? `${agent.checks.toLocaleString('en-US')} check${agent.checks === 1 ? '' : 's'}, last ${ago(agent.last_check)} ago` : 'waiting for first check';
   $('agent-status').title = 'The agent checks the risk by itself every 30 seconds.';
 
   $('agent-events').innerHTML = [...(agent.events || [])].reverse().slice(0, 3).map((e) => {
@@ -370,12 +370,16 @@ function openDeep() {
   $('deep-button').disabled = true;
   bar.style.width = '0%';
   const t0 = performance.now();
-  let ttft = null, estPrompt = 0, text = '';
+  let ttft = null, estPrompt = 0, text = '', peakGpu = 0;
   deepTimer = setInterval(() => {
     const el = (performance.now() - t0) / 1000;
     $('m-time').textContent = el.toFixed(1);
-    if (lastGpu != null) $('m-gpu').textContent = `${lastGpu}%`;
-    if (ttft === null && estPrompt) bar.style.width = `${Math.min(95, (el / (estPrompt / 2000)) * 100)}%`;
+    if (lastGpu != null) {
+      peakGpu = Math.max(peakGpu, lastGpu);
+      $('m-gpu').textContent = `${lastGpu}%`;
+      $('m-gpu').dataset.peak = peakGpu;
+    }
+    if (ttft === null && estPrompt) bar.style.width = `${Math.min(95, (el / (estPrompt / 3000)) * 100)}%`;
   }, 200);
   const es = new EventSource(API + '/inference/analysis');
   deepES = es;
@@ -383,10 +387,10 @@ function openDeep() {
     let ev;
     try { ev = JSON.parse(m.data); } catch { return; }
     if (ev.type === 'start') {
-      estPrompt = Math.round((ev.prompt_chars || 0) / 4);
+      estPrompt = ev.prompt_tokens || Math.round((ev.prompt_chars || 0) / 1.6);
       $('deep-task').textContent = `${ev.task || ''} ${ev.model} reads ${Number(ev.rows || 0).toLocaleString('en-US')} satellites, the forecast, the plan and the MOCK runbook (context window ${Math.round((ev.context_window || 0) / 1024)}k tokens).`;
-      $('m-read').textContent = `~${estPrompt.toLocaleString('en-US')}`;
-      $('m-read-s').textContent = 'reading';
+      $('m-read').textContent = `${ev.prompt_tokens ? '' : '~'}${estPrompt.toLocaleString('en-US')}`;
+      $('m-read-s').textContent = 'reading now';
     } else if (ev.type === 'prefill_done') {
       ttft = ev.ttft_s;
       bar.style.width = '100%';
@@ -410,6 +414,7 @@ function openDeep() {
       $('m-tps-s').textContent = `${ev.completion_tokens} tokens written`;
       $('m-time').textContent = Number(ev.total_s).toFixed(1);
       $('m-time-s').textContent = 'start to finish';
+      if (peakGpu) $('m-gpu').textContent = `${peakGpu}%`;
       textEl.textContent = text;
       finishDeep();
     } else if (ev.type === 'error') {
@@ -477,6 +482,7 @@ if (params.get('view')) setTimeout(() => scene.flyTo(params.get('view'), 0.01), 
 if (params.get('cme')) setTimeout(() => scene.launchCME(), Number(params.get('cme')));  // for screenshots
 if (params.get('select')) setTimeout(() => scene.selectId(params.get('select')), 12500);  // for screenshots
 if (params.get('scan')) setTimeout(() => scene.scan(), Number(params.get('scan')));  // for screenshots
+if (params.get('deep')) setTimeout(() => $('deep-button').click(), Number(params.get('deep')));  // for screenshots
 setInterval(renderClock, 1000);
 setInterval(poll, 2000);
 poll();
