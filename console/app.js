@@ -486,13 +486,23 @@ scene.onHover((h) => {
   const handle = $('globe-resize');
   const KEY = 'spf5000-globe-h';
   const maxH = () => window.innerHeight - document.querySelector('.bar').offsetHeight;
+  // default: the globe fills the screen down to the strip, so the strip stays visible
+  const defaultH = () => Math.max(340, maxH() - document.querySelector('.strip').offsetHeight);
+  let custom = false;
   const set = (h, remember = true) => {
     h = Math.max(240, Math.min(maxH(), h));
     band.style.height = `${h}px`;
-    if (remember) { try { localStorage.setItem(KEY, String(Math.round(h))); } catch { /* private mode */ } }
+    if (remember) { custom = true; try { localStorage.setItem(KEY, String(Math.round(h))); } catch { /* private mode */ } }
   };
-  const reset = () => { band.style.height = ''; try { localStorage.removeItem(KEY); } catch { /* private mode */ } };
-  try { const saved = Number(localStorage.getItem(KEY)); if (saved) set(saved, false); } catch { /* private mode */ }
+  const reset = () => {
+    custom = false;
+    band.style.height = `${defaultH()}px`;
+    try { localStorage.removeItem(KEY); } catch { /* private mode */ }
+  };
+  let saved = 0;
+  try { saved = Number(localStorage.getItem(KEY)) || 0; } catch { /* private mode */ }
+  if (saved) { custom = true; set(saved, false); } else band.style.height = `${defaultH()}px`;
+  window.addEventListener('resize', () => { if (!custom) band.style.height = `${defaultH()}px`; });
   handle.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     handle.setPointerCapture(e.pointerId);
@@ -508,7 +518,7 @@ scene.onHover((h) => {
     handle.addEventListener('pointerup', up);
   });
   handle.addEventListener('dblclick', () => {
-    if (band.getBoundingClientRect().height < maxH() - 20) set(maxH()); else reset();
+    if (Math.abs(band.getBoundingClientRect().height - defaultH()) < 20) set(Math.round(maxH() * 0.55)); else reset();
   });
   handle.addEventListener('keydown', (e) => {
     const h = band.getBoundingClientRect().height;
