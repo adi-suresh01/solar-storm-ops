@@ -1,0 +1,30 @@
+# Lets the OpenClaw agent in sandbox "ops" reach the Solar Storm Ops data API
+# on the GB10 host (api.py bound to the openshell-docker bridge, 172.18.0.1).
+#   nemoclaw ops policy add --from-file agent/policy/solar-storm-api.yaml \
+#     --trusted-private-host host.openshell.internal --yes
+preset:
+  name: solar-storm-api
+  description: "Solar Storm Ops data API on the GB10 host, port 18310"
+
+network_policies:
+  solar_storm_api:
+    name: solar_storm_api
+    endpoints:
+      - host: host.openshell.internal
+        port: 18310
+        protocol: rest
+        enforcement: enforce
+        allowed_ips:
+          - 172.18.0.1/32
+        rules:
+          - allow: { method: GET, path: "/state" }
+          - allow: { method: GET, path: "/risk" }
+          - allow: { method: GET, path: "/timeline" }
+          - allow: { method: GET, path: "/check" }
+          - allow: { method: GET, path: "/brief" }
+          - allow: { method: GET, path: "/health" }
+          - allow: { method: GET, path: "/ops-data/**" }
+          - allow: { method: POST, path: "/actions" }
+          - allow: { method: POST, path: "/replay" }
+    binaries:
+      - { path: /usr/bin/curl }

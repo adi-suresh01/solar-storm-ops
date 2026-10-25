@@ -21,7 +21,7 @@ from urllib.parse import parse_qs, unquote
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from replay import SCENARIOS, Replay  # noqa: E402
-from watcher import (BANDS, LOW_KM, OFFLINE, ROOT, Constellation, assess,  # noqa: E402
+from watcher import (BANDS, LOW_KM, OFFLINE, ROOT, STATE_DIR, Constellation, assess,  # noqa: E402
                      build_recommendation, g_scale, initial_weather, iso,
                      l12_positions, load_gp, log, maybe_refresh_gp, now_utc,
                      refresh_weather, shift)
@@ -52,7 +52,6 @@ class Engine:
         self.lock = threading.RLock()
         self.weather = initial_weather()
         self.const = Constellation(load_gp())
-        self.rec_n = 0
         self.last_noaa = 0.0
         self.last_gp = time.time()
         self.last_prop = 0.0
@@ -157,8 +156,7 @@ class Engine:
         when, kp, g = a["when"], a["kp_now"], g_scale(a["peak_kp"])
         rec = run.rec
         if lvl in ("warning", "critical") and rec is None:
-            self.rec_n += 1
-            run.rec = build_recommendation(f"rec-{self.rec_n:03d}", a, a["batch"])
+            run.rec = build_recommendation(self._next_rec_id(), a, a["batch"])
             self._log(run, when, "alert", run.rec["summary"] + " Awaiting approval on Telegram.")
         elif lvl == prev:
             if kp_tick:
@@ -173,6 +171,20 @@ class Engine:
             self._log(run, when, "info", "Storm easing. " + self._status_line(run, a))
         else:
             self._log(run, when, "info", self._status_line(run, a))
+
+    def _next_rec_id(self):
+        """Plan ids stay unique across restarts; the agent dedupes alerts on them."""
+        p = os.path.join(STATE_DIR, "rec_counter")
+        try:
+            with open(p) as f:
+                n = int(f.read().strip() or 0)
+        except (OSError, ValueError):
+            n = 0
+        n += 1
+        os.makedirs(STATE_DIR, exist_ok=True)
+        with open(p, "w") as f:
+            f.write(str(n))
+        return f"rec-{n:03d}"
 
     def _status_line(self, run, a):
         lvl, kp = a["level"], a["kp_now"]
@@ -312,19 +324,25 @@ class Engine:
             return 200, {"ok": True, "recommendation": rec}
 
     def check(self, peek=False):
-        """For the agent: NO_REPLY when calm, else the alert, once per plan and level."""
+        """For the agent: NO_REPLY when calm, else the alert text.
+
+        Without peek: returns each alert once per plan and level, and logs it as
+        sent. With peek: returns the open alert every time and changes nothing,
+        so the automation can dedupe on the first line and retry a failed run.
+        """
         with self.lock:
             run, rec = self.run, self.run.rec
             lvl = run.a["level"]
             if not rec or rec["status"] != "pending" or lvl not in ("warning", "critical"):
                 return "NO_REPLY"
+            if peek:
+                return self._alert_text(run)
             key = (rec["id"], lvl)
             if key in run.notified:
                 return "NO_REPLY"
-            if not peek:
-                run.notified.add(key)
-                self._log(run, self._sim_now(run), "info",
-                          f"Alert {rec['id']} sent to the ops lead on Telegram.")
+            run.notified.add(key)
+            self._log(run, self._sim_now(run), "info",
+                      f"Alert {rec['id']} sent to the ops lead on Telegram.")
             return self._alert_text(run)
 
     def _alert_text(self, run):
