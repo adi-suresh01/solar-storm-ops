@@ -20,9 +20,11 @@ from urllib.parse import parse_qs, unquote
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from agent_bridge import AgentBridge  # noqa: E402
 from replay import SCENARIOS, Replay  # noqa: E402
-from watcher import (BANDS, LOW_KM, OFFLINE, ROOT, STATE_DIR, Constellation, assess,  # noqa: E402
-                     build_recommendation, cme_line, cmes_known, g_scale,
+from watcher import (BANDS, L12_COUNT, LOW_KM, OFFLINE, ROOT, STATE_DIR,  # noqa: E402
+                     Constellation, assess, build_hold_recommendation,
+                     build_recommendation, cme_line, cmes_known, day_time, g_scale,
                      initial_weather, iso, l12_positions, load_gp, load_json, log,
                      maybe_fetch_donki, maybe_refresh_gp, now_utc, refresh_weather,
                      shift)
@@ -46,6 +48,8 @@ class Run:
         self.level = "none"
         self.protected = False
         self.a = None  # latest risk assessment
+        # a scheduled low launch in a replay: "scheduled" -> "held" | "launched"
+        self.launch_status = "scheduled" if replay and replay.launch else None
 
 
 class Engine:
@@ -143,13 +147,46 @@ class Engine:
         if run.replay:
             r = run.replay
             kp_now, forecast = r.kp_at(when), r.forecast(when)
-            n = r.batch_size(when)
+            n = r.batch_size(when) if run.launch_status != "held" else 0
             batch = {"count": n, "min_alt_km": 205.0, "protected": run.protected} if n else None
         else:
             kp_now, forecast, batch = self.weather["kp_now"], self.weather["kp_forecast"], None
         a = assess(when, kp_now, forecast, self.base_counts, self.low, batch)
         a["batch"] = batch
+        info = self._launch_info(run)
+        if info and info["status"] == "scheduled" and a["level"] != "none":
+            a["groups"].insert(0, {
+                "name": f"Launch L-12 (SIMULATED, {L12_COUNT} sats to ~210 km),"
+                        f" liftoff {day_time(run.replay.launch)}",
+                "count": L12_COUNT, "min_alt_km": 210.0, "band": "critical",
+                "action": "Hold the launch", "launch": True})
         return a
+
+    def _launch_info(self, run):
+        """The scheduled low launch in a replay (SIMULATED L-12), or None."""
+        r = run.replay
+        if not r or not r.launch:
+            return None
+        return {"id": "L-12", "time": iso(r.launch), "site": r.site, "sats": L12_COUNT,
+                "target_km": 210, "status": run.launch_status, "simulated": True}
+
+    def _launch_event(self, run, when):
+        """Liftoff time in a replay: the batch flies unless a hold was approved."""
+        if run.launch_status == "held":
+            self._log(run, when, "info",
+                      f"{when:%H:%M} UTC: L-12 stays on the ground (launch held). In the real event,"
+                      " 49 satellites launched at this time and about 38 reentered within days.")
+            return
+        rec = run.rec
+        if rec and rec.get("kind") == "hold":
+            if rec["status"] == "pending":
+                rec["status"] = "expired"
+                self._log(run, when, "info",
+                          f"No decision on plan {rec['id']} before liftoff. Launch L-12 goes ahead.")
+            run.rec = None  # a post-launch plan for the batch in orbit replaces it
+        run.launch_status = "launched"
+        self._log(run, when, "info",
+                  "Launch L-12: 49 satellites deployed at ~210 km (SIMULATED batch).")
 
     def _step(self):
         """Advance the current run: replay events in order, or the live picture."""
@@ -157,8 +194,7 @@ class Engine:
         if run.replay:
             for when, kind, data in run.replay.due_events():
                 if kind == "launch":
-                    self._log(run, when, "info",
-                              "Launch L-12: 49 satellites deployed at ~210 km (SIMULATED batch).")
+                    self._launch_event(run, when)
                 if kind == "cme":
                     self._log(run, when, "info", cme_line(data))
                 self._update(run, self._assess(run, when), kp_tick=(kind == "kp"))
@@ -180,7 +216,13 @@ class Engine:
         when, kp, g = a["when"], a["kp_now"], g_scale(a["peak_kp"])
         rec = run.rec
         if lvl in ("warning", "critical") and rec is None:
-            run.rec = build_recommendation(self._next_rec_id(), a, a["batch"])
+            info = self._launch_info(run)
+            if info and info["status"] == "scheduled":
+                # a low launch is still on the schedule: the decision is go/no-go
+                run.rec = build_hold_recommendation(self._next_rec_id(), a, info,
+                                                    run.replay.post_launch_peak(when))
+            else:
+                run.rec = build_recommendation(self._next_rec_id(), a, a["batch"])
             self._log(run, when, "alert", run.rec["summary"] + " Awaiting approval on Telegram.")
         elif lvl == prev:
             if kp_tick:
@@ -225,10 +267,23 @@ class Engine:
         lvl = a["level"]
         if lvl == "none":
             return "All quiet. No action needed."
+        hold = rec is not None and rec.get("kind") == "hold"
+        watching = f"Watching. Kp up to {a['outlook_kp']:.1f} forecast in the next 3 days."
+        if hold and rec["status"] == "pending" and lvl == "watch":
+            return (f"Launch L-12 (49 satellites to ~210 km) is scheduled into a storm forecast."
+                    f" Awaiting a hold decision on plan {rec['id']}.")
+        if hold and rec["status"] == "approved" and lvl == "watch":
+            return f"{watching} Launch L-12 on hold under plan {rec['id']}."
         if lvl == "watch" or rec is None:
-            return f"Watching. Kp up to {a['outlook_kp']:.1f} forecast in the next 3 days."
+            return watching
         g = g_scale(a["peak_kp"])
         head = f"G{g} storm {'under way' if lvl == 'critical' else 'expected'}."
+        if hold:
+            if rec["status"] == "pending":
+                return f"{head} Launch L-12 (49 satellites to ~210 km) is scheduled into it. Awaiting a hold decision."
+            if rec["status"] == "approved":
+                return f"{head} Plan {rec['id']} approved: launch L-12 on hold."
+            return f"{head} Plan {rec['id']} rejected: launch L-12 goes ahead."
         if rec["status"] == "pending":
             if a["batch"]:
                 return f"{head} {a['batch']['count']} satellites in batch L-12 at ~210 km at risk. Awaiting approval."
@@ -292,6 +347,7 @@ class Engine:
                 st["note"] = ("LIVE: NOAA SWPC space weather, solar wind at L1 from NOAA's"
                               " active monitor plus NASA ACE and IMAP, CelesTrak Starlink orbits.")
             st["alert"] = {"level": run.a["level"], "summary": self._summary(run)}
+            st["launch"] = self._launch_info(run)
             return st
 
     def _l1_line(self, st):
@@ -359,9 +415,14 @@ class Engine:
             where = ("on Telegram" if by.startswith("telegram") else
                      "on the dashboard" if "dashboard" in by else f"({rec['by']})")
             if decision == "approved":
-                run.protected = True
                 self._log(run, when, "approval", f"Approved by ops lead {where}.")
-                text = f"Plan {rec['id']} logged: " + "; ".join(rec["actions"]) + "."
+                if rec.get("kind") == "hold":
+                    run.launch_status = "held"
+                    rest = "; ".join(x[0].lower() + x[1:] for x in rec["actions"][1:])
+                    text = f"Plan {rec['id']} logged: launch L-12 on hold; {rest}."
+                else:
+                    run.protected = True
+                    text = f"Plan {rec['id']} logged: " + "; ".join(rec["actions"]) + "."
                 self._log(run, when + timedelta(seconds=5), "action",
                           text + (f" Note: {note}" if note else ""))
             else:
@@ -406,11 +467,18 @@ class Engine:
             lines.append(self._l1_line(st))
         lines += ["", "At risk:"]
         for g in a["groups"]:
-            lines.append(f"- {g['name']}: {g['count']} sats, lowest {g['min_alt_km']:.0f} km")
+            if g.get("launch"):
+                lines.append(f"- {g['name']}: {g['count']} sats planned at ~{g['min_alt_km']:.0f} km")
+            else:
+                lines.append(f"- {g['name']}: {g['count']} sats, lowest {g['min_alt_km']:.0f} km")
         lines += ["", "Plan:"]
         lines += [f"{i}. {x}" for i, x in enumerate(rec["actions"], 1)]
-        lines += [f"Act by {rec['deadline']}.", "",
-                  'Reply "approve" to log this plan, or "reject".']
+        if rec.get("kind") == "hold":
+            lines += [f"Decide before liftoff, {rec['deadline']}.", "",
+                      'Reply "approve" to hold the launch, or "reject" to let it go ahead.']
+        else:
+            lines += [f"Act by {rec['deadline']}.", "",
+                      'Reply "approve" to log this plan, or "reject".']
         return "\n".join(lines)
 
     def brief(self):
@@ -434,6 +502,11 @@ class Engine:
         ]
         if self._l1_line(st):
             lines.insert(2, self._l1_line(st))
+        ln = st.get("launch")
+        if ln:
+            when = {"scheduled": "set for", "held": "on hold, was set for", "launched": "launched"}
+            lines.append(f"Launch {ln['id']} (SIMULATED, {ln['sats']} satellites to ~{ln['target_km']} km):"
+                         f" {when.get(ln['status'], ln['status'])} {ln['time']}.")
         lines += [cme_line(c) for c in st["cme"]] or ["NASA DONKI: no Earth-directed CME on record."
                                                       if self._donki_loaded() else
                                                       "NASA DONKI: not available right now."]
@@ -451,6 +524,7 @@ class Engine:
 
 class Handler(BaseHTTPRequestHandler):
     engine = None
+    bridge = None
     server_version = "solar-storm-ops/0.1"
 
     def log_message(self, fmt, *args):
@@ -476,10 +550,18 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
+    def _from_agent(self):
+        # the sandbox reaches us only on the bridge address; everyone else uses 127.0.0.1
+        return self.server.server_address[0] != "127.0.0.1"
+
     def do_GET(self):
         path, _, qs = self.path.partition("?")
         e = self.engine
+        if self.bridge and self._from_agent():
+            self.bridge.note_request("GET", self.path)
         try:
+            if path == "/agent":
+                return self._send(200, self.bridge.snapshot() if self.bridge else {})
             if path == "/state":
                 return self._send(200, e.state())
             if path == "/positions":
@@ -514,7 +596,14 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as ex:
             return self._send(400, {"ok": False, "error": f"bad JSON: {ex}"})
         log(f"POST {path} {json.dumps(body)[:300]}")
+        if self.bridge and self._from_agent():
+            self.bridge.note_request("POST", path, body)
         try:
+            if path == "/agent/ask":
+                if not self.bridge:
+                    return self._send(503, {"ok": False, "error": "agent bridge is off"})
+                code, out = self.bridge.ask(body.get("question"))
+                return self._send(code, out)
             if path == "/replay":
                 sc = body.get("scenario", "live")
                 if sc != "live" and sc not in SCENARIOS:
@@ -572,6 +661,9 @@ def main():
     engine = Engine()
     Handler.engine = engine
     engine.start()
+    bridge = AgentBridge()
+    Handler.bridge = bridge
+    bridge.start()
     up = 0
     for a in addrs:
         try:

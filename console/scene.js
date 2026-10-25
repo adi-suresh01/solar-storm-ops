@@ -84,20 +84,27 @@ const ATMO_FRAG = `
 
 const SAT_VERT = `
   attribute vec3 aColor; attribute float aSize;
-  uniform float uPixelRatio; varying vec3 vColor;
+  uniform float uPixelRatio; uniform float uScan; varying vec3 vColor; varying float vBoost;
   void main() {
     vColor = aColor;
+    vBoost = 0.0;
+    if (uScan >= 0.0) {   // the agent's risk check sweeping around the planet
+      float ang = atan(position.z, position.x);
+      float front = -3.14159265 + uScan * 6.2831853;
+      float d = mod(ang - front + 3.14159265, 6.2831853) - 3.14159265;
+      vBoost = exp(-d * d * 90.0) + (d < 0.0 ? 0.3 * exp(d * 2.5) * (1.0 - uScan) : 0.0);
+    }
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
     gl_Position = projectionMatrix * mv;
-    gl_PointSize = aSize * uPixelRatio * clamp(4.2 / -mv.z, 0.18, 2.6);
+    gl_PointSize = aSize * uPixelRatio * clamp(4.2 / -mv.z, 0.18, 2.6) * (1.0 + 1.4 * vBoost);
   }`;
 const SAT_FRAG = `
-  uniform float uFade; varying vec3 vColor;
+  uniform float uFade; varying vec3 vColor; varying float vBoost;
   void main() {
     float d = length(gl_PointCoord - 0.5);
     if (d > 0.5) discard;
     float a = smoothstep(0.5, 0.05, d) * uFade;
-    gl_FragColor = vec4(vColor * (0.55 + 0.9 * a), a);
+    gl_FragColor = vec4(vColor * (0.55 + 0.9 * a) + vec3(0.55, 0.85, 1.0) * vBoost * a, a);
   }`;
 
 const SUN_VERT = `
@@ -197,7 +204,7 @@ export function createScene(canvas, labelLayer, { reducedMotion = false } = {}) 
     geo.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
     const mat = new THREE.ShaderMaterial({
       vertexShader: SAT_VERT.replace('clamp(4.2 / -mv.z, 0.18, 2.6)', '1.0'), fragmentShader: SAT_FRAG,
-      uniforms: { uPixelRatio: { value: renderer.getPixelRatio() }, uFade: { value: 1 } },
+      uniforms: { uPixelRatio: { value: renderer.getPixelRatio() }, uFade: { value: 1 }, uScan: { value: -1 } },
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
     });
     scene.add(new THREE.Points(geo, mat));
@@ -252,10 +259,18 @@ export function createScene(canvas, labelLayer, { reducedMotion = false } = {}) 
   satGeo.setDrawRange(0, 0);
   const satMat = new THREE.ShaderMaterial({
     vertexShader: SAT_VERT, fragmentShader: SAT_FRAG,
-    uniforms: { uPixelRatio: { value: renderer.getPixelRatio() }, uFade: { value: 1 } },
+    uniforms: { uPixelRatio: { value: renderer.getPixelRatio() }, uFade: { value: 1 }, uScan: { value: -1 } },
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   });
   const windMat = satMat.clone();
+
+  // scan line: a half meridian that sweeps once around the shell
+  const scanGeo = new THREE.BufferGeometry().setFromPoints(
+    Array.from({ length: 97 }, (_, k) => { const lat = -Math.PI / 2 + (k / 96) * Math.PI; return new THREE.Vector3(1.11 * Math.cos(lat), 1.11 * Math.sin(lat), 0); }));
+  const scanLine = new THREE.Line(scanGeo, new THREE.LineBasicMaterial({ color: '#9fdcff', transparent: true, opacity: 0, depthWrite: false }));
+  scene.add(scanLine);
+  let scanStart = -1;
+  const SCAN_SECONDS = 2.6;
   // positions change every frame, so give raycasting a fixed bound around the shell
   satGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1.3);
   const sats = new THREE.Points(satGeo, satMat);
@@ -399,6 +414,16 @@ export function createScene(canvas, labelLayer, { reducedMotion = false } = {}) 
       return { target: mid, pos };
     },
   };
+  let launch = null;  // {lat, lon, status, label} from /state.launch
+  const siteMarker = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTex, sizeAttenuation: false, depthWrite: false, transparent: true, color: '#f5b43c' }));
+  siteMarker.scale.setScalar(0.026);
+  siteMarker.visible = false;
+  scene.add(siteMarker);
+  views.site = () => {
+    if (!launch) return views.earth();
+    const dir = llToVec(launch.lat, launch.lon, 1).normalize();
+    return { target: new THREE.Vector3(0, 0, 0), pos: dir.multiplyScalar(4.4).addScaledVector(basis.up2, 0.5) };
+  };
   views.batch = () => {
     if (!batchIdx.length) return views.earth();
     const dir = updateBatchCenter().clone().normalize();
@@ -539,6 +564,15 @@ export function createScene(canvas, labelLayer, { reducedMotion = false } = {}) 
     windGeo.attributes.aColor.needsUpdate = true;
 
     satMat.uniforms.uFade.value = 1 - THREE.MathUtils.smoothstep(camera.position.length(), 12, 30);
+    if (scanStart >= 0) {
+      const k = (t - scanStart) / SCAN_SECONDS;
+      if (k >= 1 || sunView) { scanStart = -1; satMat.uniforms.uScan.value = -1; scanLine.material.opacity = 0; }
+      else {
+        satMat.uniforms.uScan.value = k;
+        scanLine.rotation.y = -(-Math.PI + k * Math.PI * 2);
+        scanLine.material.opacity = 0.55 * Math.sin(Math.PI * k);
+      }
+    }
 
     // magnetosphere: compressed by Kp, flashes when the CME arrives
     magMat.uniforms.uNose.value = 2.7 - Math.min(kp, 9) * 0.11;
@@ -591,6 +625,17 @@ export function createScene(canvas, labelLayer, { reducedMotion = false } = {}) 
     const l1 = monitors.length ? monitors : [{ source: 'SOLAR1', label: 'SOLAR1' }, { source: 'ACE', label: 'NASA ACE' }, { source: 'IMAP', label: 'NASA IMAP' }];
     const rows = l1.map((m) => `<span class="${m.active ? 'on' : ''}">${m.label}${m.speed_kms != null ? ` ${Math.round(m.speed_kms)} km/s` : ''}</span>`).join('');
     show('l1', tmp.copy(l1Group.position).addScaledVector(basis.up2, -1.4), `<em>L1, where the solar wind is measured</em>${rows}`, 'l1', sunView, true);
+    if (launch && launch.status !== 'launched') {
+      const p = llToVec(launch.lat, launch.lon, 1.012);
+      siteMarker.position.copy(p);
+      siteMarker.material.color.set(launch.status === 'held' ? '#7df9c2' : '#f5b43c');
+      const facing = p.clone().normalize().dot(camera.position.clone().normalize()) > 0.2;
+      siteMarker.visible = !sunView && facing;
+      show('site', p, launch.label, launch.status === 'held' ? 'batch safe' : 'site', !sunView && facing);
+    } else {
+      siteMarker.visible = false;
+      if (labels.site) labels.site.style.display = 'none';
+    }
     if (batchIdx.length) {
       const mid = batchIdx[Math.floor(batchIdx.length / 2)];
       const c = new THREE.Vector3(satPos[mid * 3], satPos[mid * 3 + 1], satPos[mid * 3 + 2]);
@@ -673,6 +718,13 @@ export function createScene(canvas, labelLayer, { reducedMotion = false } = {}) 
       activity += (target - activity) * 0.35;
     },
     launchCME() { cmeStart = clock.elapsedTime; cmeGeo.setDrawRange(0, CME_N); activity = Math.max(activity, 0.7); },
+    scan() { if (!reducedMotion) scanStart = clock.elapsedTime; },
+    setLaunch(l) {
+      launch = l && l.site ? { lat: l.site.lat, lon: l.site.lon, status: l.status,
+        label: l.status === 'held' ? `${l.id} held on the ground (SIMULATED)`
+          : `${l.id} launch site: ${l.sats} SIMULATED satellites to ~${l.target_km} km` } : null;
+    },
+    get hasBatch() { return batchIdx.length > 0; },
     flyTo,
     get view() { return view; },
     onHover(cb) { hoverCb = cb; },

@@ -52,7 +52,10 @@ When you are asked to write a storm alert, use only the alert text you were give
 - Line 1: SOLAR STORM <LEVEL> - plan <id>. If it is a replay, add "(replay)".
 - 2 to 4 short lines: what is coming and when, which satellites and how low,
   what the plan does.
-- Last line: Reply "approve" to log the plan, or "reject".
+- If the plan holds a launch: name the launch, when liftoff is, how many satellites
+  and how low they would go, and that the decision is needed before liftoff.
+- Last line: copy the reply line from the alert text exactly (for a launch hold it is
+  Reply "approve" to hold the launch, or "reject" to let it go ahead).
 
 Stay under 600 characters.
 

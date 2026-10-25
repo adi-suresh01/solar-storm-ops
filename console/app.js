@@ -140,19 +140,32 @@ function renderDecision() {
     <span>${esc(g.action || '')}</span><span class="n">lowest ${Math.round(g.min_alt_km)} km</span></div>`).join('');
 
   const rec = risk.recommendation;
-  if (!rec) { $('plan').innerHTML = ''; return; }
-  const words = { pending: 'Waiting for approval', approved: 'Approved', rejected: 'Rejected' };
+  const launch = state.launch;
+  let tail = '';
+  if (launch && launch.status === 'held') {
+    tail = utc(state.sim_time) >= utc(launch.time)
+      ? `<p class="counterfactual">${esc(launch.id)} stayed on the ground. In the real event, 49 satellites launched at this time and about 38 reentered within days.</p>`
+      : `<p class="counterfactual">${esc(launch.id)} is on hold. Liftoff was set for ${esc(fmtDate(launch.time))}, ${esc(fmtTime(launch.time))} UTC.</p>`;
+  }
+  if (!rec) { $('plan').innerHTML = tail; return; }
+  const hold = rec.kind === 'hold';
+  const words = { pending: hold ? 'Waiting for a hold decision' : 'Waiting for approval', approved: hold ? 'Launch held' : 'Approved',
+    rejected: hold ? 'Launch goes ahead' : 'Rejected', expired: 'Expired at liftoff' };
   const decided = [...timeline].reverse().find((e) => e.kind === 'approval');
-  let html = `<div class="plan-head"><b>Plan ${esc(rec.id)}</b><span class="status ${esc(rec.status)}">${esc(words[rec.status] || rec.status)}</span></div>
+  let html = `<div class="plan-head"><b>Plan ${esc(rec.id)}${hold ? ': hold launch ' + esc(launch?.id || '') : ''}</b><span class="status ${esc(rec.status)}">${esc(words[rec.status] || rec.status)}</span></div>
     <ul>${(rec.actions || []).map((a) => `<li>${esc(a)}</li>`).join('')}</ul>
-    <p class="deadline">Act by ${esc(fmtDate(rec.deadline))}, ${esc(fmtTime(rec.deadline))} UTC</p>`;
+    <p class="deadline">${hold ? 'Decide before liftoff' : 'Act by'}: ${esc(fmtDate(rec.deadline))}, ${esc(fmtTime(rec.deadline))} UTC</p>`;
+  if (hold && launch && launch.status === 'scheduled') {
+    const mins = Math.max(0, Math.round((utc(launch.time) - utc(state.sim_time)) / 60000));
+    html += `<p class="countdown">Liftoff in ${Math.floor(mins / 60)} h ${String(mins % 60).padStart(2, '0')} min of replay time</p>`;
+  }
   if (rec.status === 'pending') {
-    html += `<div class="actions"><button class="approve" id="approve">Approve plan</button><button class="reject" id="reject">Reject plan</button></div>
+    html += `<div class="actions"><button class="approve" id="approve">${hold ? 'Hold the launch' : 'Approve plan'}</button><button class="reject" id="reject">${hold ? 'Let it launch' : 'Reject plan'}</button></div>
       <p class="hint">The ops lead can also reply "approve" to the alert on Telegram.</p>`;
   } else if (decided) {
     html += `<p class="hint">${esc(decided.text)}</p>`;
   }
-  $('plan').innerHTML = html;
+  $('plan').innerHTML = html + tail;
   $('approve')?.addEventListener('click', () => decide('approved'));
   $('reject')?.addEventListener('click', () => decide('rejected'));
 }
@@ -245,15 +258,92 @@ async function poll() {
   // then the camera comes back to the satellites at risk
   if (lastMode !== null && state.mode !== lastMode) scene.flyTo(state.mode === 'live' ? 'earth' : 'sun');
   const lvl = state.alert?.level || 'none';
+  scene.setLaunch(state.launch);
   if (lastLevel !== null && LEVEL_RANK[lvl] > LEVEL_RANK[lastLevel] && LEVEL_RANK[lvl] >= 2 && state.mode === lastMode) {
     scene.launchCME();
     if (scene.view !== 'sun') scene.flyTo('sun', 2);
-    setTimeout(() => scene.flyTo('batch', 3), 8500);
+    const next = state.launch && state.launch.status === 'scheduled' ? 'site' : scene.hasBatch ? 'batch' : 'earth';
+    setTimeout(() => scene.flyTo(next, 3), 8500);
   }
   lastMode = state.mode;
   lastLevel = lvl;
   render();
 }
+
+// ---------------------------------------------------------------- agent + local inference
+let agent = null, lastAgentSeq = null;
+const ago = (s) => {
+  const sec = Math.max(0, Math.round((Date.now() - new Date(s).getTime()) / 1000));
+  return sec < 90 ? `${sec} s` : `${Math.round(sec / 60)} min`;
+};
+const hms = (s) => new Date(s).toISOString().slice(11, 19);
+
+function renderAgent() {
+  if (!agent) return;
+  const ask = agent.ask;
+  const recent = (agent.events || []).filter((e) => Date.now() - new Date(e.time).getTime() < 8000);
+  const working = (ask && ask.status === 'working') || recent.length > 0 || (agent.inference?.running > 0);
+  $('agent').classList.toggle('working', !!working);
+  $('agent-state').textContent = ask && ask.status === 'working' ? 'answering' : working ? 'working' : 'watching';
+  $('agent-status').textContent = !agent.sandbox
+    ? 'The agent sandbox is not on this machine, so only local data is shown.'
+    : agent.checks
+      ? `Checks the risk by itself every 30 s. ${agent.checks.toLocaleString('en-US')} checks so far, the last one ${ago(agent.last_check)} ago.`
+      : 'Waiting for the first check from the agent.';
+
+  $('agent-events').innerHTML = [...(agent.events || [])].reverse().slice(0, 5).map((e) => {
+    const fresh = Date.now() - new Date(e.time).getTime() < 6000;
+    return `<li class="${esc(e.kind)}${fresh ? ' fresh' : ''}"><time>${esc(hms(e.time))}</time><span>${esc(e.text)}</span></li>`;
+  }).join('');
+
+  const run = (agent.runs || [])[0];
+  $('agent-msg').innerHTML = run && run.text ? `
+    <div class="bubble">${esc(run.text)}</div>
+    <p class="bubble-meta">Last alert, sent to ${esc(run.channel || 'Telegram')} at ${esc(hms(run.time))}. Written by ${esc(run.model)} on this GB10
+      in ${run.seconds} s (${Number(run.tokens_in || 0).toLocaleString('en-US')} tokens read, ${Number(run.tokens_out || 0).toLocaleString('en-US')} written).</p>` : '';
+
+  const btn = $('ask-button');
+  btn.disabled = !!(ask && ask.status === 'working') || !agent.sandbox;
+  if (!ask) $('ask-answer').innerHTML = '';
+  else if (ask.status === 'working') {
+    $('ask-answer').innerHTML = `<p class="agent-status">The agent is working on it on the GB10 (${esc(ago(ask.started))}). Its tool calls show up above.</p>`;
+  } else {
+    $('ask-answer').innerHTML = `<p class="agent-status">${esc(ask.question)}</p><div class="answer">${esc(ask.answer || '')}</div>
+      ${ask.status === 'done' ? `<p class="bubble-meta">Answered in ${ask.seconds} s by the agent, using the local model.</p>` : ''}`;
+  }
+
+  const inf = agent.inference || {};
+  if (inf.ok) {
+    const tps = inf.gen_tps != null ? `${Math.round(inf.gen_tps)} tokens/s now` : 'idle';
+    const gpu = inf.gpu_util != null ? `, GPU ${inf.gpu_util}% busy` : '';
+    $('local-model').innerHTML = `Local model: <b>${esc(inf.model)}</b> on this GB10, ${esc(tps)}${esc(gpu)}`;
+    $('local-detail').textContent = `${Number(inf.generation_tokens_total).toLocaleString('en-US')} tokens written locally since the model server started. No cloud model is configured.`;
+  }
+}
+
+async function pollAgent() {
+  try { agent = await get('/agent'); } catch { return; }
+  if (lastAgentSeq !== null && agent.seq > lastAgentSeq) scene.scan();
+  lastAgentSeq = agent.seq;
+  renderAgent();
+}
+
+$('ask-form').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const q = $('ask-input').value.trim();
+  if (!q) return;
+  $('ask-button').disabled = true;
+  try {
+    await post('/agent/ask', { question: q });
+    $('ask-input').value = '';
+  } catch (e) {
+    $('ask-answer').innerHTML = `<p class="agent-status">${esc(e.message)}</p>`;
+  }
+  await pollAgent();
+});
+
+setInterval(pollAgent, 2000);
+pollAgent();
 
 document.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
 document.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => { scene.flyTo(b.dataset.view); render(); }));
@@ -306,6 +396,7 @@ scene.onHover((h) => {
 if (params.get('view')) setTimeout(() => scene.flyTo(params.get('view'), 0.01), 1500);
 if (params.get('cme')) setTimeout(() => scene.launchCME(), Number(params.get('cme')));  // for screenshots
 if (params.get('select')) setTimeout(() => scene.selectId(params.get('select')), 12500);  // for screenshots
+if (params.get('scan')) setTimeout(() => scene.scan(), Number(params.get('scan')));  // for screenshots
 setInterval(renderClock, 1000);
 setInterval(poll, 2000);
 poll();

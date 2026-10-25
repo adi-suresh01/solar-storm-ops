@@ -65,6 +65,18 @@
       <div id="groups"></div>
       <div id="plan"></div>
     </section>
+    <section class="agent" id="agent" aria-live="polite">
+      <h2><span class="pulse" aria-hidden="true"></span>Agent <span id="agent-state" class="agent-state">watching</span></h2>
+      <p id="agent-status" class="agent-status">Connecting to the agent.</p>
+      <ol id="agent-events"></ol>
+      <div id="agent-msg"></div>
+      <form id="ask-form" autocomplete="off">
+        <label for="ask-input" class="sr-only">Ask the agent</label>
+        <input id="ask-input" maxlength="300" placeholder="Ask the agent, e.g. which satellites are most at risk?">
+        <button type="submit" id="ask-button">Ask</button>
+      </form>
+      <div id="ask-answer"></div>
+    </section>
     <section class="log">
       <h2>Event log</h2>
       <ol id="log"></ol>
@@ -74,7 +86,10 @@
   <footer class="foot">
     <div class="legend" id="legend" aria-label="Satellites by risk"></div>
     <p class="note" id="note"></p>
-    <p class="local">Running on a Dell Pro Max GB10. The model, the data and the agent stay on this machine.</p>
+    <div class="local" id="local">
+      <p id="local-model">Local model: waiting for the inference server.</p>
+      <p id="local-detail">The model, the data and the agent stay on this Dell Pro Max GB10.</p>
+    </div>
   </footer>
 
   <div id="offline" class="offline" hidden></div>

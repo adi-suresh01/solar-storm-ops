@@ -37,21 +37,43 @@ Shapes match `fixtures/`. Differences and additions:
   kp_estimate_max, source}]`. NASA's DONKI service is down today, so this is `[]` unless
   it comes back (the API retries every 20 min and caches it).
 - `/state.replay`: `{title, speed, start, end, done}` during a replay.
-- `/risk.recommendation.status`: `pending` | `approved` | `rejected`.
-- `/positions`: the 49 L-12 satellites (ids 990001-990049) have `"simulated": true` and
-  `"protected": false|true` (true after the ops lead approves). Positions are always for
-  the current wall-clock time, also during a replay.
+- `/state.launch`: the SIMULATED launch L-12 in the Feb 2022 replay, `null` otherwise:
+  `{id: "L-12", time, site: {lat, lon, name}, sats: 49, target_km: 210, status, simulated: true}`.
+  `status` is `scheduled`, then `held` (a hold plan was approved before liftoff) or
+  `launched` (liftoff time came without an approved hold). Site is a Florida launch site
+  (28.608, -80.604), labeled SIMULATED.
+- `/risk.recommendation.kind`: `hold` (hold a scheduled launch) or `protect` (satellites in orbit).
+- `/risk.recommendation.status`: `pending` | `approved` | `rejected` | `expired` (a hold plan
+  nobody decided on before liftoff; a `protect` plan replaces it after launch).
+- `/risk.groups[]`: while L-12 is still scheduled, the first group is the launch, with `"launch": true`.
+- `/positions`: the 49 L-12 satellites (ids 990001-990049) appear only after a liftoff that
+  was not held. They have `"simulated": true` and `"protected": false|true` (true after the
+  ops lead approves the raise-orbit plan). Positions are always for the current wall-clock
+  time, also during a replay.
 - Timeline text can include a free-text note from the agent. Render it as text, not HTML.
 
 ## Replay timing
 
-`POST /replay {"scenario": "feb2022", "speed": 360}` (1 storm hour = 10 s):
+The Feb 2022 replay is a launch go/no-go. In the real event a G1 storm was under way on
+the morning of 3 Feb 2022, another was forecast, and 49 Starlink satellites launched at
+18:13 UTC into a ~210 km orbit; about 38 reentered. Our L-12 is the SIMULATED stand-in.
 
-- 0 s: sim 2022-02-03 18:00 UTC, level `watch`
-- 2 s: L-12 launch (SIMULATED batch of 49 at ~210 km)
-- 30 s: sim 21:00, level `warning`, plan `rec-NNN` created, `/check` hands the alert to the agent
-- 3.5 min: sim 2022-02-04 15:00, Kp 5.3, level `critical`
-- 5 min: sim 2022-02-05 00:00, replay ends and holds
+`POST /replay {"scenario": "feb2022", "speed": 720}` (1 storm hour = 5 s, the demo speed):
+
+- 0 s: sim 2 Feb 09:00 UTC, level `watch`, launch L-12 `scheduled` for 3 Feb 18:13
+- 15 s: sim 2 Feb 12:00, level `warning` (Kp 5.0 forecast within 18 h), hold plan
+  `rec-NNN` (kind `hold`) created; the agent picks it up within 30 s and Telegram gets it
+  about 35 to 65 s after start
+- 105 s: sim 3 Feb 06:00, Kp 5.0 now, level `critical`. If the plan is still pending,
+  the agent sends a second (CRITICAL) alert. Approve before this to avoid it.
+- 166 s: sim 3 Feb 18:13, liftoff time
+  - hold approved: "L-12 stays on the ground (launch held). In the real event, 49
+    satellites launched at this time and about 38 reentered within days."
+  - not approved: the hold plan expires, L-12 launches (49 SIMULATED satellites appear),
+    and at 180 s (sim 3 Feb 21:00, `warning`) a raise-orbit plan (kind `protect`) follows
+- 5 min 15 s: sim 5 Feb 00:00, replay ends and holds
+
+At speed 360 every time above doubles.
 
 `may2024` starts 2024-05-09 18:00 UTC and goes `critical` (Kp 7.7 forecast) 30 s in.
 `{"scenario": "live"}` goes back to live data.

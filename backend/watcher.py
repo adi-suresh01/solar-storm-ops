@@ -497,5 +497,38 @@ def build_recommendation(rec_id, a, batch):
                    "Hold launches until the Kp forecast drops below 5",
                    "Re-check in 3 h"]
     deadline = a["peak_time"] if a["peak_time"] != a["when"] else a["when"] + timedelta(hours=3)
-    return {"id": rec_id, "summary": head + body, "actions": actions,
+    return {"id": rec_id, "kind": "protect", "summary": head + body, "actions": actions,
             "deadline": iso(deadline), "status": "pending"}
+
+
+def day_time(dt):
+    """'3 Feb 18:13 UTC'"""
+    return f"{dt.day} {dt.strftime('%b')} {dt.strftime('%H:%M')} UTC"
+
+
+def build_hold_recommendation(rec_id, a, launch, post_peak):
+    """Launch go/no-go plan while a low launch is still on the schedule.
+
+    launch:    {"id", "time", "sats", "target_km"} (the SIMULATED L-12)
+    post_peak: (time, kp) highest known Kp from liftoff to 3 days after, or None
+    """
+    kp, g = a["peak_kp"], g_scale(a["peak_kp"])
+    if a["peak_time"] == a["when"]:
+        head = f"Geomagnetic storm under way: Kp {kp:.1f} (G{g}) now"
+    else:
+        hours = max(1, math.ceil((a["peak_time"] - a["when"]).total_seconds() / 3600))
+        head = f"Geomagnetic storm forecast: Kp {kp:.1f} (G{g}) within {hours} h"
+    lt = utc(launch["time"])
+    text = (f"{head}, and launch {launch['id']} is set for {day_time(lt)} with {launch['sats']}"
+            f" satellites to ~{launch['target_km']} km (SIMULATED).")
+    if post_peak and kp_int(post_peak[1]) >= 5:
+        text += (f" Kp {post_peak[1]:.1f} is forecast for {day_time(post_peak[0])},"
+                 f" within 3 days after liftoff.")
+    text += (" At that altitude a storm can drag them down within days. Hold the launch until"
+             " the Kp forecast for the 3 days after liftoff stays below 5.")
+    actions = [f"Hold launch {launch['id']} ({launch['sats']} satellites to ~{launch['target_km']} km)",
+               "Re-plan liftoff for a window with Kp forecast below 5 for 3 days,"
+               " or a higher insertion orbit",
+               "Re-check in 3 h"]
+    return {"id": rec_id, "kind": "hold", "summary": text, "actions": actions,
+            "deadline": iso(lt), "status": "pending"}

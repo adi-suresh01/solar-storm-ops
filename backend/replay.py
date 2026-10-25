@@ -11,19 +11,25 @@ from watcher import L12_COUNT, iso, load_json, utc
 SCENARIOS = {
     "feb2022": {
         "title": "Feb 2022 storm replay",
-        "start": "2022-02-03T18:00:00Z",
+        # Starts the day before liftoff, so the agent can call the launch decision.
+        "start": "2022-02-02T09:00:00Z",
         "end": "2022-02-05T00:00:00Z",
-        # Starlink Group 4-7 lifted off 2022-02-03 18:13 UTC. Our batch L-12 is a
-        # SIMULATED stand-in for it (historical orbits need a Space-Track account).
+        # Starlink Group 4-7 lifted off 2022-02-03 18:13 UTC into a ~210 km orbit and
+        # about 38 of 49 reentered. Our launch L-12 is a SIMULATED stand-in for it
+        # (historical orbits need a Space-Track account).
         "launch": "2022-02-03T18:13:00Z",
+        "site": {"lat": 28.608, "lon": -80.604, "name": "Florida launch site (SIMULATED)"},
         "note": "REPLAY: real Kp from the GFZ archive. Forecast is SIMULATED (archived Kp that"
-                " followed). Launch batch L-12 is SIMULATED. X-ray and solar wind not replayed.",
+                " followed). Launch L-12 (49 satellites to ~210 km from a Florida launch site,"
+                " liftoff 3 Feb 18:13 UTC) is SIMULATED, timed like the real Starlink launch"
+                " that day. X-ray and solar wind not replayed.",
     },
     "may2024": {
         "title": "May 2024 storm replay",
         "start": "2024-05-09T18:00:00Z",
         "end": "2024-05-12T12:00:00Z",
         "launch": None,
+        "site": None,
         "note": "REPLAY: real Kp from the GFZ archive against today's real constellation."
                 " Forecast is SIMULATED (archived Kp that followed). X-ray and solar wind not replayed.",
     },
@@ -43,6 +49,7 @@ class Replay:
         self.start = utc(start) if start else utc(sc["start"])
         self.end = utc(sc["end"])
         self.launch = utc(sc["launch"]) if sc["launch"] else None
+        self.site = sc.get("site")
         kp = load_json("replay_kp.json")[scenario]
         self.kp = [(utc(p["time"]), float(p["kp"])) for p in kp]
         # NASA DONKI CMEs for this window, if we ever managed to cache them
@@ -99,6 +106,16 @@ class Replay:
         """CMEs already on their way when the replay starts (shown as context)."""
         return [c for c in self.cmes if utc(c["start"]) <= self.start
                 and utc(c["earth_arrival"]) >= self.start - timedelta(days=1)]
+
+    def post_launch_peak(self, when, days=3):
+        """Highest Kp known at `when` (the SIMULATED forecast) for the bins from liftoff
+        to `days` after it. Returns (time, kp) or None."""
+        if not self.launch:
+            return None
+        lo, hi = self.launch - timedelta(hours=3), self.launch + timedelta(days=days)
+        known = [(t, k) for t, k in self.kp if t > when][:FORECAST_BINS]
+        window = [(t, k) for t, k in known if lo < t <= hi]
+        return max(window, key=lambda p: p[1]) if window else None
 
     def batch_size(self, when):
         return L12_COUNT if self.launched(when) else 0
