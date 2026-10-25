@@ -12,6 +12,7 @@ const LEVEL_RANK = { none: 0, watch: 1, warning: 2, critical: 3 };
 const RISK = ['critical', 'high', 'watch', 'fine'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+if (params.get('layout') === 'full') document.body.classList.add('full');
 const scene = createScene($('scene'), $('labels'), { reducedMotion });
 let state = null, risk = null, timeline = [], positions = null;
 let posAt = 0, lastMode = null, lastLevel = null, busy = false;
@@ -473,8 +474,9 @@ scene.onHover((h) => {
   const s = h.sat;
   const tags = [s.simulated ? 'SIMULATED' : '', s.protected ? 'protected' : ''].filter(Boolean).join(', ');
   tip.innerHTML = `<b>${esc(s.name)}</b>${Math.round(s.alt_km)} km, ${esc(s.risk)}${tags ? ` (${esc(tags)})` : ''}`;
-  tip.style.left = `${h.x + 14}px`;
-  tip.style.top = `${h.y + 14}px`;
+  const r = $('scene').getBoundingClientRect();  // hover coords are relative to the globe window
+  tip.style.left = `${r.left + h.x + 14}px`;
+  tip.style.top = `${r.top + h.y + 14}px`;
   tip.hidden = false;
 });
 

@@ -217,6 +217,25 @@ button { font: inherit; color: inherit; }
 #tooltip b { display: block; }
 .offline { position: fixed; left: 50%; top: 80px; transform: translateX(-50%); z-index: 5; background: #3a0d16; border: 1px solid var(--critical); padding: 8px 14px; border-radius: 4px; }
 
+/* ---------------------------------------------------------------- window layout (default)
+   Three fixed columns, nothing on top of the globe: instruments | globe window | decision.
+   ?layout=full puts the globe back behind everything. */
+:root { --left: 330px; --right: 384px; --top: 68px; --bottom: 66px; }
+body:not(.full) #scene, body:not(.full) #labels {
+  left: var(--left); top: var(--top);
+  width: calc(100vw - var(--left) - var(--right)); height: calc(100vh - var(--top) - var(--bottom));
+}
+body:not(.full) #scene { border: 1px solid var(--line); border-radius: 6px; background: var(--space); }
+body:not(.full) .bar { background: var(--space); }
+body:not(.full) .instruments { top: var(--top); bottom: var(--bottom); width: var(--left); background: none; padding-top: 6px; }
+body:not(.full) .decision { top: var(--top); right: 16px; width: calc(var(--right) - 32px); max-height: calc(100vh - var(--top) - var(--bottom) - 8px); }
+body:not(.full) .foot { height: var(--bottom); padding: 10px 24px; align-items: center; background: var(--space); border-top: 1px solid var(--line); }
+body:not(.full) .deep {
+  left: calc(var(--left) + 16px); right: calc(var(--right) + 16px); width: auto; transform: none;
+  top: auto; bottom: calc(var(--bottom) + 16px); max-height: calc(100vh - var(--top) - var(--bottom) - 32px);
+}
+body:not(.full) .alert.level-none { padding-top: 4px; }
+
 /* projectors and laptop screens */
 @media (max-height: 820px) {
   :root { --s6: 50px; --s4: 18px; }
@@ -227,10 +246,13 @@ button { font: inherit; color: inherit; }
   .deep { bottom: 80px; }
   .m-v { font-size: 24px; }
 }
+@media (max-height: 820px) {
+  :root { --left: 290px; --right: 350px; }
+}
 @media (max-width: 1100px) {
   body { overflow: auto; }
-  #scene { position: relative; height: 62vh; }
-  #labels { position: absolute; height: 62vh; }
+  #scene, body:not(.full) #scene { position: relative; left: 0; top: 0; width: 100%; height: 62vh; }
+  #labels, body:not(.full) #labels { position: absolute; left: 0; top: 0; width: 100%; height: 62vh; }
   .bar { position: sticky; flex-wrap: wrap; gap: 12px; background: var(--space); }
   .clock { min-width: 0; align-items: flex-start; }
   .instruments, .decision, .foot { position: static; width: auto; max-height: none; background: none; padding: 16px; }

@@ -721,8 +721,8 @@ export function createScene(canvas, labelLayer, { reducedMotion = false } = {}) 
     scan() { if (!reducedMotion) scanStart = clock.elapsedTime; },
     setLaunch(l) {
       launch = l && l.site ? { lat: l.site.lat, lon: l.site.lon, status: l.status,
-        label: l.status === 'held' ? `${l.id} held on the ground (SIMULATED)`
-          : `${l.id} launch site: ${l.sats} SIMULATED satellites to ~${l.target_km} km` } : null;
+        label: l.status === 'held' ? `${l.id} held on the ground`
+          : `${l.id} launch site (SIMULATED)` } : null;
     },
     get hasBatch() { return batchIdx.length > 0; },
     flyTo,
