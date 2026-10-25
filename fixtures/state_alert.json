@@ -1,0 +1,22 @@
+{
+  "mode": "feb2022",
+  "sim_time": "2022-02-03T21:00:00Z",
+  "kp_now": 2.667,
+  "kp_history": [
+    {"time": "2022-02-03T09:00:00Z", "kp": 5.333},
+    {"time": "2022-02-03T12:00:00Z", "kp": 4.0},
+    {"time": "2022-02-03T15:00:00Z", "kp": 3.0},
+    {"time": "2022-02-03T18:00:00Z", "kp": 3.0}
+  ],
+  "kp_forecast": [
+    {"time": "2022-02-04T12:00:00Z", "kp": 4.0},
+    {"time": "2022-02-04T15:00:00Z", "kp": 5.333}
+  ],
+  "xray": {"flux": 1.2e-06, "class": "C1.2"},
+  "scales": {"R": "0", "S": "0", "G": "1"},
+  "solar_wind_kms": 520,
+  "alert": {
+    "level": "warning",
+    "summary": "G1 storm expected. 49 satellites in batch L-12 at ~210 km at risk. Awaiting approval."
+  }
+}

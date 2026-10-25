@@ -1,0 +1,12 @@
+{
+  "time": "2026-10-25T19:27:18Z",
+  "storm_factor": 0,
+  "bands": {
+    "critical": 12,
+    "high": 151,
+    "watch": 1045,
+    "fine": 9904
+  },
+  "groups": [],
+  "recommendation": null
+}

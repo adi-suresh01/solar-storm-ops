@@ -1,0 +1,6 @@
+[
+  {"time": "2022-02-03T18:00:00Z", "kind": "info", "text": "Watching. Kp 4.0, no action needed."},
+  {"time": "2022-02-03T21:00:00Z", "kind": "alert", "text": "G1 storm expected within 18 h. 49 sats in L-12 at ~210 km. Recommended: raise orbits now. Sent to ops lead on Telegram."},
+  {"time": "2022-02-03T21:02:00Z", "kind": "approval", "text": "Approved by ops lead on Telegram."},
+  {"time": "2022-02-03T21:02:05Z", "kind": "action", "text": "Plan rec-001 logged: L-12 orbit raise, next launch on hold, re-check in 3 h."}
+]

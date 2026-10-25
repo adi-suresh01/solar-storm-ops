@@ -1,0 +1,33 @@
+{
+  "time": "2022-02-03T21:00:00Z",
+  "scenario": "feb2022",
+  "storm_factor": 1,
+  "kp_peak_forecast": 5.33,
+  "bands": {"critical": 61, "high": 1196, "watch": 9855, "fine": 0},
+  "groups": [
+    {
+      "name": "Launch batch L-12 (SIMULATED, 49 sats at ~210 km)",
+      "count": 49,
+      "min_alt_km": 205,
+      "band": "critical",
+      "action": "Raise orbit now; fly edge-on (low-drag attitude) until above 300 km"
+    },
+    {
+      "name": "Orbit-raising group (below 350 km)",
+      "count": 151,
+      "min_alt_km": 252,
+      "band": "high",
+      "action": "Continue raising; hold any planned lowering burns"
+    }
+  ],
+  "recommendation": {
+    "id": "rec-001",
+    "summary": "Minor geomagnetic storm (Kp 5.3, G1) expected within 18 h. 49 satellites in batch L-12 are at ~210 km, where drag can rise up to 50%. Raise their orbits now and fly low-drag attitude.",
+    "actions": [
+      "Batch L-12: start orbit raise immediately, low-drag attitude",
+      "Hold the next launch until Kp forecast drops below 4",
+      "Re-check in 3 h"
+    ],
+    "deadline": "2022-02-04T09:00:00Z"
+  }
+}
